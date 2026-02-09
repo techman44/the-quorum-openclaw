@@ -351,27 +351,22 @@ else
     warn "Gateway service not running. Start it with: openclaw gateway install && openclaw daemon start"
 fi
 
-# ── 13. Onboarding ──────────────────────────────────────────────────────
-header "Onboarding"
+# ── 13. Onboarding reminder ──────────────────────────────────────────────
+header "Onboarding (next step)"
 
 echo ""
 echo "  The Quorum works best when the agents know about you."
-echo "  The onboarding questionnaire asks about your background,"
-echo "  goals, priorities, and preferences so the agents have"
-echo "  real context from day one."
+echo "  Before the cron agents start running, you should complete"
+echo "  the onboarding questionnaire through OpenClaw."
 echo ""
-
-if prompt_yn "Run the onboarding questionnaire now? (recommended)" "y"; then
-    echo ""
-    info "Starting onboarding... (this is an interactive conversation)"
-    echo ""
-    openclaw agent --message "Run the quorum-onboarding skill. Walk me through the full onboarding questionnaire for The Quorum."
-    echo ""
-    success "Onboarding session started."
-else
-    info "Skipping onboarding. You can run it later with:"
-    echo "  openclaw agent --message \"Run the quorum-onboarding skill\""
-fi
+echo "  To start onboarding, open your OpenClaw chat and say:"
+echo ""
+printf "    ${BOLD}Run the quorum-onboarding skill${NC}\n"
+echo ""
+echo "  It will walk you through an interactive conversation about"
+echo "  your background, goals, priorities, and preferences."
+echo "  Everything gets stored so the agents have context from day one."
+echo ""
 
 # ── 14. Optional cron setup ─────────────────────────────────────────────
 header "Cron schedule"
@@ -445,11 +440,8 @@ if [ "$HEALTH_OK" = true ]; then
     echo "List Quorum skills:"
     echo "  openclaw skills list | grep quorum"
     echo ""
-    echo "Test the memory tools:"
-    echo "  openclaw agent --message \"Use quorum_store to save a test note\""
-    echo ""
-    echo "Run onboarding (if skipped):"
-    echo "  openclaw agent --message \"Run the quorum-onboarding skill\""
+    echo "Start onboarding (recommended first step):"
+    echo "  Open OpenClaw chat and say: Run the quorum-onboarding skill"
     echo ""
     echo "Manage Docker services:"
     echo "  cd $PROJECT_DIR && $COMPOSE_CMD ps"
