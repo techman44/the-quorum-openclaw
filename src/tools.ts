@@ -1,14 +1,124 @@
 import { Pool } from 'pg';
 import { readdir, readFile, rename, mkdir } from 'node:fs/promises';
 import { join, extname, basename } from 'node:path';
+import { execFile } from 'node:child_process';
+import { promisify } from 'node:util';
+import { tmpdir } from 'node:os';
+import { mkdtemp, rm } from 'node:fs/promises';
+
+const execFileAsync = promisify(execFile);
+
 // pdf-parse is loaded dynamically so PDF support is optional
 let pdfParse: ((buf: Buffer) => Promise<{ text: string }>) | null = null;
 try {
   // eslint-disable-next-line @typescript-eslint/no-require-imports
   const mod = require('pdf-parse');
-  pdfParse = typeof mod === 'function' ? mod : (mod.default ?? mod.PDFParse ?? null);
+  if (typeof mod === 'function') {
+    // v1 style: module is directly callable
+    pdfParse = mod;
+  } else if (typeof mod.default === 'function') {
+    pdfParse = mod.default;
+  } else if (typeof mod.PDFParse === 'function') {
+    // v2 style: exports a class - wrap it
+    const PDFParse = mod.PDFParse;
+    pdfParse = async (buf: Buffer) => {
+      const parser = new PDFParse();
+      return parser.loadPDF(buf);
+    };
+  }
 } catch {
   // pdf-parse not installed - PDF files will be skipped
+}
+
+/**
+ * OCR a PDF using Ollama's deepseek-ocr (or compatible vision model).
+ * Converts pages to PNG via pdftoppm, then sends each to Ollama for OCR.
+ * Returns the combined extracted text from all pages.
+ */
+async function ocrPdfWithOllama(
+  pdfPath: string,
+  ollamaHost: string,
+  model: string = 'deepseek-ocr',
+): Promise<string> {
+  // Create a temp dir for page images
+  const tmpDir = await mkdtemp(join(tmpdir(), 'quorum-ocr-'));
+  try {
+    // Convert PDF to PNG images (one per page)
+    await execFileAsync('pdftoppm', ['-png', '-r', '200', pdfPath, join(tmpDir, 'page')]);
+
+    // Read all generated page images
+    const pageFiles = (await readdir(tmpDir))
+      .filter(f => f.endsWith('.png'))
+      .sort();
+
+    if (pageFiles.length === 0) {
+      throw new Error('pdftoppm produced no page images');
+    }
+
+    const pageTexts: string[] = [];
+    for (const pageFile of pageFiles) {
+      const imgBuffer = await readFile(join(tmpDir, pageFile));
+      const base64Img = imgBuffer.toString('base64');
+
+      const resp = await fetch(`${ollamaHost}/api/chat`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          model,
+          messages: [
+            {
+              role: 'user',
+              content: 'Extract all text from this document image. Return only the extracted text, preserving the original structure and formatting as much as possible. Do not add commentary.',
+              images: [base64Img],
+            },
+          ],
+          stream: false,
+        }),
+      });
+
+      if (!resp.ok) {
+        const body = await resp.text().catch(() => '');
+        throw new Error(`Ollama OCR failed (${resp.status}): ${body}`);
+      }
+
+      const data = await resp.json() as { message?: { content?: string } };
+      const pageText = data.message?.content?.trim() || '';
+      if (pageText) {
+        pageTexts.push(pageText);
+      }
+    }
+
+    return pageTexts.join('\n\n--- Page Break ---\n\n');
+  } finally {
+    // Clean up temp dir
+    await rm(tmpDir, { recursive: true, force: true }).catch(() => {});
+  }
+}
+
+/**
+ * Check if a specific Ollama model is available.
+ */
+async function isOllamaModelAvailable(ollamaHost: string, model: string): Promise<boolean> {
+  try {
+    const resp = await fetch(`${ollamaHost}/api/tags`);
+    if (!resp.ok) return false;
+    const data = await resp.json() as { models?: Array<{ name: string }> };
+    return (data.models ?? []).some(m => m.name === model || m.name.startsWith(`${model}:`));
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * Check if pdftoppm is available on the system.
+ */
+async function isPdftoppmAvailable(): Promise<boolean> {
+  try {
+    await execFileAsync('pdftoppm', ['-v']);
+    return true;
+  } catch {
+    return false;
+  }
 }
 import {
   storeDocument,
@@ -756,14 +866,46 @@ export function registerTools(api: any, pool: Pool, config: QuorumConfig): void 
           let content: string;
 
           if (ext === '.pdf') {
-            if (!pdfParse) {
-              throw new Error('PDF support not available (install pdf-parse: npm install pdf-parse)');
+            // Step 1: Try pdf-parse for text-based PDFs (fast, no GPU needed)
+            let pdfText = '';
+            if (pdfParse) {
+              try {
+                const pdfBuffer = await readFile(filePath);
+                const pdfData = await pdfParse(pdfBuffer);
+                pdfText = pdfData.text?.trim() || '';
+              } catch {
+                // pdf-parse failed, will try OCR fallback
+              }
             }
-            const pdfBuffer = await readFile(filePath);
-            const pdfData = await pdfParse(pdfBuffer);
-            content = pdfData.text || '';
+
+            // Step 2: If no text extracted, try OCR via Ollama deepseek-ocr
+            if (!pdfText) {
+              const ocrModel = 'deepseek-ocr';
+              const hasOcr = await isOllamaModelAvailable(config.ollama_host, ocrModel);
+              const hasPdftoppm = await isPdftoppmAvailable();
+
+              if (hasOcr && hasPdftoppm) {
+                pdfText = await ocrPdfWithOllama(filePath, config.ollama_host, ocrModel);
+              } else if (!pdfParse && !hasOcr) {
+                throw new Error(
+                  'No PDF processor available. Install pdf-parse (npm install pdf-parse) ' +
+                  'for text PDFs, or install deepseek-ocr (ollama pull deepseek-ocr) + ' +
+                  'poppler-utils for image/scanned PDFs.'
+                );
+              } else if (!pdfText) {
+                const reasons: string[] = [];
+                if (!hasOcr) reasons.push('deepseek-ocr model not installed (ollama pull deepseek-ocr)');
+                if (!hasPdftoppm) reasons.push('pdftoppm not found (install poppler-utils)');
+                throw new Error(
+                  `PDF contains no extractable text (may be image-only). ` +
+                  `OCR fallback unavailable: ${reasons.join('; ')}`
+                );
+              }
+            }
+
+            content = pdfText;
             if (!content.trim()) {
-              throw new Error('PDF contains no extractable text (may be image-only)');
+              throw new Error('PDF produced no text after all extraction attempts');
             }
           } else {
             content = await readFile(filePath, 'utf-8');
