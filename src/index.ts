@@ -1,6 +1,6 @@
 import { Pool } from 'pg';
 import { mkdir } from 'node:fs/promises';
-import { resolve } from 'node:path';
+import { resolve, isAbsolute } from 'node:path';
 import { ensureSchema, getStats } from './db.js';
 import { processEmbeddingQueue, checkOllamaHealth, type EmbeddingConfig } from './embeddings.js';
 import { registerTools, type QuorumConfig } from './tools.js';
@@ -27,9 +27,29 @@ function getPool(config: QuorumConfig): Pool {
   return pool;
 }
 
+function resolvePath(base: string, rawPath: string): string {
+  // If the user provided an absolute path, use it directly
+  if (isAbsolute(rawPath)) return rawPath;
+  // Resolve relative paths against the plugin directory
+  return resolve(base, rawPath);
+}
+
 function buildConfig(apiConfig: Record<string, unknown> | undefined, pluginDir: string): QuorumConfig {
   const inboxRaw = (apiConfig?.inbox_dir as string) ?? 'data/inbox';
   const processedRaw = (apiConfig?.processed_dir as string) ?? 'data/processed';
+
+  // Use pluginDir if it looks valid (not root '/'), otherwise fall back to
+  // the directory containing this compiled file (dist/), then go up one level
+  // to reach the project root.
+  let base = pluginDir;
+  if (!base || base === '/') {
+    // __dirname is the dist/ folder; go up one level for the project root
+    base = resolve(__dirname, '..');
+    if (!base || base === '/') {
+      base = process.cwd();
+    }
+    console.log(`[the-quorum] pluginDir was "${pluginDir}", using fallback base: ${base}`);
+  }
 
   return {
     db_host: (apiConfig?.db_host as string) ?? 'localhost',
@@ -40,8 +60,8 @@ function buildConfig(apiConfig: Record<string, unknown> | undefined, pluginDir: 
     ollama_host: (apiConfig?.ollama_host as string) ?? 'http://localhost:11434',
     ollama_embed_model: (apiConfig?.ollama_embed_model as string) ?? 'mxbai-embed-large',
     embedding_dim: (apiConfig?.embedding_dim as number) ?? 1024,
-    inbox_dir: resolve(pluginDir, inboxRaw),
-    processed_dir: resolve(pluginDir, processedRaw),
+    inbox_dir: resolvePath(base, inboxRaw),
+    processed_dir: resolvePath(base, processedRaw),
   };
 }
 
