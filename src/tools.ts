@@ -726,7 +726,8 @@ export function registerTools(api: any, pool: Pool, config: QuorumConfig): void 
         const dirEntries = await readdir(inboxDir, { withFileTypes: true });
         entries = dirEntries
           .filter((e) => e.isFile())
-          .map((e) => e.name);
+          .map((e) => e.name)
+          .filter((name) => !name.startsWith('.') && !name.startsWith('._') && name !== '.gitkeep');
       } catch (err: unknown) {
         const message = err instanceof Error ? err.message : String(err);
         return jsonResult({
@@ -769,11 +770,6 @@ export function registerTools(api: any, pool: Pool, config: QuorumConfig): void 
       const errors: Array<{ file: string; error: string }> = [];
 
       for (const fileName of entries) {
-        // Skip macOS metadata and hidden files
-        if (fileName.startsWith('.') || fileName.startsWith('._')) {
-          continue;
-        }
-
         const filePath = join(inboxDir, fileName);
         try {
           const ext = extname(fileName).toLowerCase();
