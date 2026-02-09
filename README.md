@@ -48,41 +48,6 @@ docker compose up -d
 docker exec quorum-ollama nvidia-smi
 ```
 
-### GPU Passthrough in Proxmox LXC
-
-If you're running inside a Proxmox LXC container (as opposed to bare metal or a VM), GPU passthrough requires extra configuration on the Proxmox host:
-
-1. **LXC config** (`/etc/pve/lxc/<VMID>.conf`) -- add cgroup device access and mount entries for each NVIDIA device:
-   ```
-   lxc.cgroup2.devices.allow: c 195:* rwm
-   lxc.cgroup2.devices.allow: c 505:* rwm
-   lxc.cgroup2.devices.allow: c 508:* rwm
-   lxc.mount.entry: /dev/nvidia0 dev/nvidia0 none bind,optional,create=file
-   lxc.mount.entry: /dev/nvidia1 dev/nvidia1 none bind,optional,create=file
-   lxc.mount.entry: /dev/nvidiactl dev/nvidiactl none bind,optional,create=file
-   lxc.mount.entry: /dev/nvidia-uvm dev/nvidia-uvm none bind,optional,create=file
-   lxc.mount.entry: /dev/nvidia-uvm-tools dev/nvidia-uvm-tools none bind,optional,create=file
-   lxc.mount.entry: /dev/nvidia-caps dev/nvidia-caps none bind,optional,create=dir
-   ```
-
-2. **NVIDIA driver inside the LXC** must match the host kernel module version exactly. Install using the `.run` installer with `--no-kernel-module`:
-   ```bash
-   # Check host driver version first (on the Proxmox host)
-   nvidia-smi
-
-   # Inside the LXC, install the matching version
-   ./NVIDIA-Linux-x86_64-<VERSION>.run --no-kernel-module --silent
-   ```
-
-3. **NVIDIA Container Toolkit** inside the LXC needs `no-cgroups = true` for unprivileged containers:
-   ```bash
-   # /etc/nvidia-container-runtime/config.toml
-   [nvidia-container-cli]
-   no-cgroups = true
-   ```
-
-4. Multiple LXC containers can share the same physical GPUs (time-sharing). Add mount entries for as many GPUs as you want to expose (`nvidia0`, `nvidia1`, etc.).
-
 ## Installation
 
 ```bash
