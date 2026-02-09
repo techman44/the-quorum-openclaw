@@ -1,12 +1,6 @@
 import { Pool } from 'pg';
 import { readdir, readFile, rename, mkdir } from 'node:fs/promises';
 import { join, extname, basename } from 'node:path';
-import { execFile } from 'node:child_process';
-import { promisify } from 'node:util';
-import { tmpdir } from 'node:os';
-import { mkdtemp, rm } from 'node:fs/promises';
-
-const execFileAsync = promisify(execFile);
 
 // pdf-parse is loaded dynamically so PDF support is optional
 let pdfParse: ((buf: Buffer) => Promise<{ text: string }>) | null = null;
@@ -30,188 +24,6 @@ try {
   // pdf-parse not installed - PDF files will be skipped
 }
 
-/**
- * OCR a PDF using Ollama's deepseek-ocr (or compatible vision model).
- * Converts pages to PNG via pdftoppm, then sends each to Ollama for OCR.
- * Returns the combined extracted text from all pages.
- */
-async function ocrPdfWithOllama(
-  pdfPath: string,
-  ollamaHost: string,
-  model: string = 'deepseek-ocr',
-): Promise<string> {
-  const OCR_TIMEOUT_MS = 120_000; // 120 seconds per page (vision models can be slow)
-  const logPrefix = '[quorum-ocr]';
-
-  console.error(`${logPrefix} Starting OCR for: ${pdfPath}`);
-  console.error(`${logPrefix} Ollama host: ${ollamaHost}, model: ${model}`);
-
-  // Create a temp dir for page images
-  const tmpDir = await mkdtemp(join(tmpdir(), 'quorum-ocr-'));
-  try {
-    // Convert PDF to PNG images (one per page)
-    console.error(`${logPrefix} Running pdftoppm to convert PDF to PNG images...`);
-    try {
-      await execFileAsync('pdftoppm', ['-png', '-r', '200', pdfPath, join(tmpDir, 'page')]);
-    } catch (pdftoppmErr: unknown) {
-      const msg = pdftoppmErr instanceof Error ? pdftoppmErr.message : String(pdftoppmErr);
-      throw new Error(`pdftoppm conversion failed: ${msg}`);
-    }
-
-    // Read all generated page images
-    const pageFiles = (await readdir(tmpDir))
-      .filter(f => f.endsWith('.png'))
-      .sort();
-
-    console.error(`${logPrefix} pdftoppm produced ${pageFiles.length} page image(s)`);
-
-    if (pageFiles.length === 0) {
-      throw new Error('pdftoppm produced no page images from PDF');
-    }
-
-    const pageTexts: string[] = [];
-    const pageErrors: string[] = [];
-
-    for (let i = 0; i < pageFiles.length; i++) {
-      const pageFile = pageFiles[i];
-      const pageNum = i + 1;
-      console.error(`${logPrefix} Processing page ${pageNum}/${pageFiles.length}: ${pageFile}`);
-
-      try {
-        const imgBuffer = await readFile(join(tmpDir, pageFile));
-        const base64Img = imgBuffer.toString('base64');
-        console.error(`${logPrefix} Page ${pageNum} image size: ${imgBuffer.length} bytes, base64 length: ${base64Img.length}`);
-
-        const controller = new AbortController();
-        const timeoutId = setTimeout(() => controller.abort(), OCR_TIMEOUT_MS);
-
-        let resp: Response;
-        try {
-          resp = await fetch(`${ollamaHost}/api/chat`, {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({
-              model,
-              messages: [
-                {
-                  role: 'user',
-                  content: 'Extract all text from this document image. Return only the extracted text, preserving the original structure and formatting as much as possible. Do not add commentary.',
-                  images: [base64Img],
-                },
-              ],
-              stream: false,
-            }),
-            signal: controller.signal,
-          });
-        } catch (fetchErr: unknown) {
-          clearTimeout(timeoutId);
-          const msg = fetchErr instanceof Error ? fetchErr.message : String(fetchErr);
-          const isAbort = fetchErr instanceof Error && fetchErr.name === 'AbortError';
-          const errDetail = isAbort
-            ? `Ollama OCR timed out after ${OCR_TIMEOUT_MS / 1000}s on page ${pageNum}`
-            : `Ollama OCR fetch failed on page ${pageNum}: ${msg}`;
-          console.error(`${logPrefix} ${errDetail}`);
-          pageErrors.push(errDetail);
-          continue;
-        }
-        clearTimeout(timeoutId);
-
-        if (!resp.ok) {
-          const body = await resp.text().catch(() => '(could not read response body)');
-          const errDetail = `Ollama OCR HTTP ${resp.status} on page ${pageNum}: ${body}`;
-          console.error(`${logPrefix} ${errDetail}`);
-          pageErrors.push(errDetail);
-          continue;
-        }
-
-        const rawBody = await resp.text();
-        console.error(`${logPrefix} Page ${pageNum} raw response length: ${rawBody.length} chars`);
-
-        let data: { message?: { content?: string }; response?: string; error?: string };
-        try {
-          data = JSON.parse(rawBody);
-        } catch {
-          const errDetail = `Ollama OCR returned non-JSON on page ${pageNum}: ${rawBody.substring(0, 200)}`;
-          console.error(`${logPrefix} ${errDetail}`);
-          pageErrors.push(errDetail);
-          continue;
-        }
-
-        if (data.error) {
-          const errDetail = `Ollama OCR returned error on page ${pageNum}: ${data.error}`;
-          console.error(`${logPrefix} ${errDetail}`);
-          pageErrors.push(errDetail);
-          continue;
-        }
-
-        // Ollama chat API returns message.content; generate API returns response
-        const pageText = (data.message?.content ?? data.response ?? '').trim();
-        console.error(`${logPrefix} Page ${pageNum} extracted text length: ${pageText.length} chars`);
-
-        if (pageText) {
-          pageTexts.push(pageText);
-        } else {
-          console.error(`${logPrefix} Page ${pageNum} produced empty text from OCR`);
-          pageErrors.push(`Page ${pageNum} OCR returned empty text`);
-        }
-      } catch (pageErr: unknown) {
-        const msg = pageErr instanceof Error ? pageErr.message : String(pageErr);
-        const errDetail = `Unexpected error on page ${pageNum}: ${msg}`;
-        console.error(`${logPrefix} ${errDetail}`);
-        pageErrors.push(errDetail);
-      }
-    }
-
-    const combinedText = pageTexts.join('\n\n--- Page Break ---\n\n');
-
-    console.error(`${logPrefix} OCR complete: ${pageTexts.length}/${pageFiles.length} pages produced text, total ${combinedText.length} chars`);
-
-    if (pageErrors.length > 0) {
-      console.error(`${logPrefix} OCR had ${pageErrors.length} error(s):\n  - ${pageErrors.join('\n  - ')}`);
-    }
-
-    // If we got zero text from all pages, throw with details about what went wrong
-    if (!combinedText) {
-      const errorSummary = pageErrors.length > 0
-        ? `Page errors: ${pageErrors.join('; ')}`
-        : 'All pages returned empty text with no errors reported';
-      throw new Error(
-        `OCR extracted no text from any of the ${pageFiles.length} page(s). ${errorSummary}`
-      );
-    }
-
-    return combinedText;
-  } finally {
-    // Clean up temp dir
-    await rm(tmpDir, { recursive: true, force: true }).catch(() => {});
-  }
-}
-
-/**
- * Check if a specific Ollama model is available.
- */
-async function isOllamaModelAvailable(ollamaHost: string, model: string): Promise<boolean> {
-  try {
-    const resp = await fetch(`${ollamaHost}/api/tags`);
-    if (!resp.ok) return false;
-    const data = await resp.json() as { models?: Array<{ name: string }> };
-    return (data.models ?? []).some(m => m.name === model || m.name.startsWith(`${model}:`));
-  } catch {
-    return false;
-  }
-}
-
-/**
- * Check if pdftoppm is available on the system.
- */
-async function isPdftoppmAvailable(): Promise<boolean> {
-  try {
-    await execFileAsync('pdftoppm', ['-v']);
-    return true;
-  } catch {
-    return false;
-  }
-}
 import {
   storeDocument,
   storeEvent,
@@ -958,61 +770,18 @@ export function registerTools(api: any, pool: Pool, config: QuorumConfig): void 
           let content: string;
 
           if (ext === '.pdf') {
-            // Step 1: Try pdf-parse for text-based PDFs (fast, no GPU needed)
-            let pdfText = '';
-            if (pdfParse) {
-              try {
-                console.error(`[quorum-ocr] Trying pdf-parse for ${fileName}...`);
-                const pdfBuffer = await readFile(filePath);
-                const pdfData = await pdfParse(pdfBuffer);
-                pdfText = pdfData.text?.trim() || '';
-                console.error(`[quorum-ocr] pdf-parse extracted ${pdfText.length} chars from ${fileName}`);
-              } catch (parseErr: unknown) {
-                const msg = parseErr instanceof Error ? parseErr.message : String(parseErr);
-                console.error(`[quorum-ocr] pdf-parse failed for ${fileName}: ${msg} - will try OCR fallback`);
-              }
-            } else {
-              console.error(`[quorum-ocr] pdf-parse not available, skipping text extraction for ${fileName}`);
+            if (!pdfParse) {
+              throw new Error(
+                'pdf-parse not installed. Run: npm install pdf-parse'
+              );
             }
-
-            // Step 2: If no text extracted, try OCR via Ollama deepseek-ocr
-            if (!pdfText) {
-              const ocrModel = 'deepseek-ocr';
-              console.error(`[quorum-ocr] No text from pdf-parse for ${fileName}, checking OCR availability...`);
-              const hasOcr = await isOllamaModelAvailable(config.ollama_host, ocrModel);
-              const hasPdftoppm = await isPdftoppmAvailable();
-              console.error(`[quorum-ocr] OCR available: model=${hasOcr}, pdftoppm=${hasPdftoppm}`);
-
-              if (hasOcr && hasPdftoppm) {
-                console.error(`[quorum-ocr] Starting OCR pipeline for ${fileName}...`);
-                try {
-                  pdfText = await ocrPdfWithOllama(filePath, config.ollama_host, ocrModel);
-                  console.error(`[quorum-ocr] OCR pipeline returned ${pdfText.length} chars for ${fileName}`);
-                } catch (ocrErr: unknown) {
-                  const msg = ocrErr instanceof Error ? ocrErr.message : String(ocrErr);
-                  console.error(`[quorum-ocr] OCR pipeline failed for ${fileName}: ${msg}`);
-                  throw new Error(`OCR failed for ${fileName}: ${msg}`);
-                }
-              } else if (!pdfParse && !hasOcr) {
-                throw new Error(
-                  'No PDF processor available. Install pdf-parse (npm install pdf-parse) ' +
-                  'for text PDFs, or install deepseek-ocr (ollama pull deepseek-ocr) + ' +
-                  'poppler-utils for image/scanned PDFs.'
-                );
-              } else if (!pdfText) {
-                const reasons: string[] = [];
-                if (!hasOcr) reasons.push('deepseek-ocr model not installed (ollama pull deepseek-ocr)');
-                if (!hasPdftoppm) reasons.push('pdftoppm not found (install poppler-utils)');
-                throw new Error(
-                  `PDF contains no extractable text (may be image-only). ` +
-                  `OCR fallback unavailable: ${reasons.join('; ')}`
-                );
-              }
-            }
-
-            content = pdfText;
-            if (!content.trim()) {
-              throw new Error('PDF produced no text after all extraction attempts (pdf-parse returned empty, OCR returned empty)');
+            const pdfBuffer = await readFile(filePath);
+            const pdfData = await pdfParse(pdfBuffer);
+            content = pdfData.text?.trim() || '';
+            if (!content) {
+              throw new Error(
+                'PDF contains no extractable text (may be a scanned/image-only PDF)'
+              );
             }
           } else {
             content = await readFile(filePath, 'utf-8');
