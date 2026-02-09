@@ -46,12 +46,14 @@ docker compose up -d    # start services
 The Quorum has three layers:
 
 **1. Memory Tools (Plugin)**
-The OpenClaw plugin provides tools that any agent session can use:
+The OpenClaw plugin provides seven tools that any agent session can use:
 - `quorum_store` -- Save documents, notes, reflections, and other knowledge
 - `quorum_search` -- Semantic search across all stored memory
-- `quorum_store_event` -- Record events (decisions, connections, critiques, etc.)
+- `quorum_store_event` -- Record events (decisions, insights, critiques, opportunities, etc.)
 - `quorum_list_tasks` -- View and filter tracked tasks
-- `quorum_create_task` -- Create actionable task items
+- `quorum_create_task` -- Create or update actionable task items
+- `quorum_embed` -- Manually trigger embedding generation for a document
+- `quorum_integration_status` -- Check health of PostgreSQL, Ollama, and pgvector
 
 **2. Conscience Agents (Skills + Cron)**
 Five agents run on scheduled intervals via OpenClaw cron jobs. Each has a distinct personality and purpose, defined by skill files in the `skills/` directory:
@@ -65,6 +67,9 @@ Five agents run on scheduled intervals via OpenClaw cron jobs. Each has a distin
 | **The Opportunist** | Every 6 hours | Scans for quick wins, reusable work, and hidden value |
 
 A sixth agent, **The Data Collector**, is available as a skill for on-demand use when ingesting and organizing information into the memory system.
+
+**Onboarding**
+On first use, the system runs a one-time onboarding conversation that learns about you -- your background, goals, priorities, accountability preferences, and how you want the system to behave. You can optionally paste a LinkedIn URL or resume for instant career context. Everything gets stored in the database so the agents have real data to work with from day one. The onboarding checks for a completion milestone and won't re-trigger after it's done.
 
 **3. Delivery (Notifications)**
 Each agent run announces its findings via your configured channel (Telegram or WhatsApp), so insights reach you without opening a terminal.
@@ -118,6 +123,7 @@ the-quorum-openclaw/
   src/                   Plugin source code (TypeScript)
   schema/                PostgreSQL schema migrations (7 files)
   skills/
+    onboarding/          One-time setup questionnaire (self-removes after completion)
     connector/           The Connector skill
     executor/            The Executor skill
     strategist/          The Strategist skill
