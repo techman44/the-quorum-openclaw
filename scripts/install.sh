@@ -51,6 +51,11 @@ prompt_yn() {
     [[ "$answer" =~ ^[Yy] ]]
 }
 
+# ── Ensure DBUS session bus is available (headless / SSH environments) ────
+if [ -z "${DBUS_SESSION_BUS_ADDRESS:-}" ] && [ -S "${XDG_RUNTIME_DIR:-/run/user/$(id -u)}/bus" ]; then
+    export DBUS_SESSION_BUS_ADDRESS="unix:path=${XDG_RUNTIME_DIR:-/run/user/$(id -u)}/bus"
+fi
+
 # ═══════════════════════════════════════════════════════════════════════════
 echo ""
 echo "============================================"
@@ -132,29 +137,31 @@ header "Environment configuration"
 
 ENV_FILE="$PROJECT_DIR/.env"
 
+GENERATED_PASSWORD="$(openssl rand -base64 24 | tr -d '/+=' | head -c 32)"
+
 if [ -f "$ENV_FILE" ]; then
     success ".env already exists -- using existing configuration."
 else
     if [ -f "$PROJECT_DIR/.env.example" ]; then
-        cp "$PROJECT_DIR/.env.example" "$ENV_FILE"
-        success "Created .env from .env.example."
+        sed "s/GENERATE_ON_INSTALL/$GENERATED_PASSWORD/" "$PROJECT_DIR/.env.example" > "$ENV_FILE"
+        success "Created .env from .env.example with generated DB password."
     else
         # Create a minimal .env with defaults
-        cat > "$ENV_FILE" <<'ENVEOF'
+        cat > "$ENV_FILE" <<ENVEOF
 # The Quorum for OpenClaw - Environment Configuration
 DB_HOST=localhost
 DB_PORT=5432
 DB_USER=quorum
-DB_PASSWORD=changeme
+DB_PASSWORD=$GENERATED_PASSWORD
 DB_NAME=quorum
 OLLAMA_HOST=http://localhost:11434
 OLLAMA_PORT=11434
 OLLAMA_EMBED_MODEL=mxbai-embed-large
 EMBEDDING_DIM=1024
 ENVEOF
-        success "Created .env with default values."
+        success "Created .env with generated DB password."
     fi
-    warn "Review $ENV_FILE and update any values before production use."
+    info "A random database password has been generated automatically."
 fi
 
 # Source .env to pick up DB vars for later steps
@@ -299,11 +306,6 @@ success "Schema migrations applied."
 
 # ── 10. Install and configure plugin in OpenClaw ─────────────────────────
 header "Installing plugin into OpenClaw"
-
-# Ensure systemd user bus is available (needed for openclaw commands)
-if [ -z "${DBUS_SESSION_BUS_ADDRESS:-}" ] && [ -S "${XDG_RUNTIME_DIR:-/run/user/$(id -u)}/bus" ]; then
-    export DBUS_SESSION_BUS_ADDRESS="unix:path=${XDG_RUNTIME_DIR:-/run/user/$(id -u)}/bus"
-fi
 
 cd "$PROJECT_DIR"
 info "Running: openclaw plugins install -l ."

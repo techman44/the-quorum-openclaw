@@ -1,5 +1,5 @@
 {
-  "name": "@the-quorum/openclaw-plugin",
+  "name": "the-quorum",
   "version": "0.1.0",
   "description": "The Quorum - AI conscience agents with persistent memory for OpenClaw",
   "main": "dist/index.js",
