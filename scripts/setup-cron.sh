@@ -159,7 +159,7 @@ echo ""
 
 # ── Connector: every 15 minutes ────────────────────────────────────
 
-echo "  [1/5] The Connector (every 15 minutes)..."
+echo "  [1/6] The Connector (every 15 minutes)..."
 openclaw cron add \
   --name "quorum-connector" \
   --cron "*/15 * * * *" \
@@ -171,7 +171,7 @@ openclaw cron add \
 
 # ── Executor: every hour ───────────────────────────────────────────
 
-echo "  [2/5] The Executor (every hour)..."
+echo "  [2/6] The Executor (every hour)..."
 openclaw cron add \
   --name "quorum-executor" \
   --cron "0 * * * *" \
@@ -183,7 +183,7 @@ openclaw cron add \
 
 # ── Strategist: daily at 6am ──────────────────────────────────────
 
-echo "  [3/5] The Strategist (daily at 6:00 AM)..."
+echo "  [3/6] The Strategist (daily at 6:00 AM)..."
 openclaw cron add \
   --name "quorum-strategist" \
   --cron "0 6 * * *" \
@@ -196,7 +196,7 @@ openclaw cron add \
 
 # ── Devil's Advocate: every 4 hours ───────────────────────────────
 
-echo "  [4/5] The Devil's Advocate (every 4 hours)..."
+echo "  [4/6] The Devil's Advocate (every 4 hours)..."
 openclaw cron add \
   --name "quorum-devils-advocate" \
   --cron "0 */4 * * *" \
@@ -208,7 +208,7 @@ openclaw cron add \
 
 # ── Opportunist: every 6 hours ────────────────────────────────────
 
-echo "  [5/5] The Opportunist (every 6 hours)..."
+echo "  [5/6] The Opportunist (every 6 hours)..."
 openclaw cron add \
   --name "quorum-opportunist" \
   --cron "0 */6 * * *" \
@@ -218,9 +218,21 @@ openclaw cron add \
   --channel "$CHANNEL" \
   --to "$CHAT_ID"
 
+# ── Data Collector: every 30 minutes ─────────────────────────────
+
+echo "  [6/6] The Data Collector (every 30 minutes)..."
+openclaw cron add \
+  --name "quorum-data-collector" \
+  --cron "*/30 * * * *" \
+  --session isolated \
+  --message "Use quorum_scan_inbox to check for new files in the inbox directory. For each file found, it will be automatically ingested, categorized, tagged, and embedded. Report what was processed." \
+  --announce \
+  --channel "$CHANNEL" \
+  --to "$CHAT_ID"
+
 echo ""
 echo "============================================"
-echo "  All 5 Quorum cron jobs created!"
+echo "  All 6 Quorum cron jobs created!"
 echo "============================================"
 echo ""
 echo "Schedules:"
@@ -229,6 +241,7 @@ echo "  Executor ............ every hour"
 echo "  Strategist .......... daily at 6:00 AM"
 echo "  Devil's Advocate .... every 4 hours"
 echo "  Opportunist ......... every 6 hours"
+echo "  Data Collector ...... every 30 minutes"
 echo ""
 echo "Run 'openclaw cron list' to verify."
 echo "Edit a job: openclaw cron edit <jobId>"

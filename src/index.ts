@@ -1,4 +1,6 @@
 import { Pool } from 'pg';
+import { mkdir } from 'node:fs/promises';
+import { resolve } from 'node:path';
 import { ensureSchema, getStats } from './db.js';
 import { processEmbeddingQueue, checkOllamaHealth, type EmbeddingConfig } from './embeddings.js';
 import { registerTools, type QuorumConfig } from './tools.js';
@@ -25,7 +27,10 @@ function getPool(config: QuorumConfig): Pool {
   return pool;
 }
 
-function buildConfig(apiConfig: Record<string, unknown> | undefined): QuorumConfig {
+function buildConfig(apiConfig: Record<string, unknown> | undefined, pluginDir: string): QuorumConfig {
+  const inboxRaw = (apiConfig?.inbox_dir as string) ?? 'data/inbox';
+  const processedRaw = (apiConfig?.processed_dir as string) ?? 'data/processed';
+
   return {
     db_host: (apiConfig?.db_host as string) ?? 'localhost',
     db_port: (apiConfig?.db_port as number) ?? 5432,
@@ -35,11 +40,14 @@ function buildConfig(apiConfig: Record<string, unknown> | undefined): QuorumConf
     ollama_host: (apiConfig?.ollama_host as string) ?? 'http://localhost:11434',
     ollama_embed_model: (apiConfig?.ollama_embed_model as string) ?? 'mxbai-embed-large',
     embedding_dim: (apiConfig?.embedding_dim as number) ?? 1024,
+    inbox_dir: resolve(pluginDir, inboxRaw),
+    processed_dir: resolve(pluginDir, processedRaw),
   };
 }
 
 export default function register(api: any): void {
-  const config = buildConfig(api.config);
+  const pluginDir = api.pluginDir ?? process.cwd();
+  const config = buildConfig(api.config, pluginDir);
   const db = getPool(config);
   const embedConfig: EmbeddingConfig = {
     ollama_host: config.ollama_host,
@@ -258,6 +266,17 @@ export default function register(api: any): void {
       const message = err instanceof Error ? err.message : String(err);
       console.error(`[the-quorum] Schema init failed: ${message}`);
       console.error('[the-quorum] Run "openclaw quorum setup" to initialize the database.');
+    }
+
+    // Create inbox and processed directories if they don't exist
+    try {
+      await mkdir(config.inbox_dir, { recursive: true });
+      await mkdir(config.processed_dir, { recursive: true });
+      console.log(`[the-quorum] Inbox directory ready: ${config.inbox_dir}`);
+      console.log(`[the-quorum] Processed directory ready: ${config.processed_dir}`);
+    } catch (err: unknown) {
+      const message = err instanceof Error ? err.message : String(err);
+      console.error(`[the-quorum] Failed to create inbox/processed directories: ${message}`);
     }
   });
 

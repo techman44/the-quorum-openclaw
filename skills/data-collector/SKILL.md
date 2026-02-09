@@ -54,3 +54,39 @@ You are the librarian of the system. When information needs to be stored -- whet
 - If the same information already exists in the system (check with `quorum_search` first), update it rather than creating a duplicate.
 - For emails and conversations, extract and tag mentioned people, companies, dates, and action items as metadata -- these are the most common search dimensions.
 - When storing web content, include the source URL in metadata so the original can be referenced.
+
+## Inbox Directory (Automated Ingestion)
+
+The Data Collector can automatically ingest files placed in the **inbox directory** (`data/inbox/` by default). This runs as a scheduled cron job every 30 minutes, or can be triggered manually with the `quorum_scan_inbox` tool.
+
+### How It Works
+
+1. Drop files into the `data/inbox/` directory (relative to the plugin directory).
+2. The Data Collector scans the inbox on its next scheduled run (every 30 minutes).
+3. Each file is read, categorized by its extension, stored as a document in memory, and queued for embedding.
+4. Processed files are moved to `data/processed/` with a timestamp prefix so originals are preserved and never re-ingested.
+
+### Supported File Types
+
+| Extension | doc_type | Description |
+|---|---|---|
+| `.eml` | `email` | Email messages |
+| `.html`, `.htm` | `web` | Web page content |
+| `.md`, `.txt` | `note` | Notes, markdown documents, plain text |
+| `.json`, `.csv` | `record` | Structured data, records, logs |
+| All others | `file` | Generic file content |
+
+### Configuration
+
+The inbox and processed directory paths can be customized in the plugin config:
+
+- `inbox_dir` -- Path to the inbox directory (default: `data/inbox`)
+- `processed_dir` -- Path to the processed directory (default: `data/processed`)
+
+### Manual Use
+
+You can also invoke the inbox scan manually:
+
+- **Full scan**: Use `quorum_scan_inbox` with no parameters to process all files in the inbox.
+- **Dry run**: Use `quorum_scan_inbox` with `dry_run: true` to preview what files would be ingested without processing them.
+- **Custom path**: Use `quorum_scan_inbox` with `inbox_path` to scan a different directory.

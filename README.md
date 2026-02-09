@@ -46,7 +46,7 @@ docker compose up -d    # start services
 The Quorum has three layers:
 
 **1. Memory Tools (Plugin)**
-The OpenClaw plugin provides seven tools that any agent session can use:
+The OpenClaw plugin provides eight tools that any agent session can use:
 - `quorum_store` -- Save documents, notes, reflections, and other knowledge
 - `quorum_search` -- Semantic search across all stored memory
 - `quorum_store_event` -- Record events (decisions, insights, critiques, opportunities, etc.)
@@ -54,6 +54,7 @@ The OpenClaw plugin provides seven tools that any agent session can use:
 - `quorum_create_task` -- Create or update actionable task items
 - `quorum_embed` -- Manually trigger embedding generation for a document
 - `quorum_integration_status` -- Check health of PostgreSQL, Ollama, and pgvector
+- `quorum_scan_inbox` -- Scan the inbox directory for new files, ingest and index them
 
 **2. Conscience Agents (Skills + Cron)**
 Five agents run on scheduled intervals via OpenClaw cron jobs. Each has a distinct personality and purpose, defined by skill files in the `skills/` directory:
@@ -65,8 +66,7 @@ Five agents run on scheduled intervals via OpenClaw cron jobs. Each has a distin
 | **The Strategist** | Daily at 6:00 AM | Writes reflections, identifies patterns, reprioritizes work |
 | **The Devil's Advocate** | Every 4 hours | Challenges assumptions, critiques decisions, highlights risks |
 | **The Opportunist** | Every 6 hours | Scans for quick wins, reusable work, and hidden value |
-
-A sixth agent, **The Data Collector**, is available as a skill for on-demand use when ingesting and organizing information into the memory system.
+| **The Data Collector** | Every 30 minutes | Scans the inbox directory for new files, ingests and indexes them automatically |
 
 **Onboarding**
 On first use, the system runs a one-time onboarding conversation that learns about you -- your background, goals, priorities, accountability preferences, and how you want the system to behave. You can optionally paste a LinkedIn URL or resume for instant career context. Everything gets stored in the database so the agents have real data to work with from day one. The onboarding checks for a completion milestone and won't re-trigger after it's done.
@@ -109,6 +109,28 @@ bash scripts/setup-cron.sh --remove
 List active cron jobs:
 ```bash
 openclaw cron list
+```
+
+## Inbox Directory
+
+The Data Collector agent automatically monitors a local inbox directory for new files. Any file placed in the inbox is ingested into the Quorum memory system, categorized by file type, tagged, embedded for semantic search, and then moved to a processed directory.
+
+**Default paths** (relative to the plugin directory):
+- Inbox: `data/inbox/`
+- Processed: `data/processed/`
+
+**How to use it:**
+1. Drop any file into `data/inbox/`.
+2. The Data Collector cron job runs every 30 minutes and processes all files found.
+3. Each file is stored as a document with its type inferred from the extension (`.eml` -> email, `.html` -> web, `.md`/`.txt` -> note, `.json`/`.csv` -> record, others -> file).
+4. After ingestion, the file is moved to `data/processed/` with a timestamp prefix.
+
+You can also trigger a manual scan at any time using the `quorum_scan_inbox` tool, which supports a `dry_run` mode to preview files without ingesting them.
+
+To customize the inbox and processed directory paths:
+```bash
+openclaw plugins config the-quorum --set inbox_dir=/path/to/custom/inbox
+openclaw plugins config the-quorum --set processed_dir=/path/to/custom/processed
 ```
 
 ## Project Structure

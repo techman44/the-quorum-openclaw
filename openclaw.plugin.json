@@ -14,7 +14,9 @@
       "db_name": { "type": "string", "default": "quorum" },
       "ollama_host": { "type": "string", "default": "http://localhost:11434" },
       "ollama_embed_model": { "type": "string", "default": "mxbai-embed-large" },
-      "embedding_dim": { "type": "number", "default": 1024 }
+      "embedding_dim": { "type": "number", "default": 1024 },
+      "inbox_dir": { "type": "string", "default": "data/inbox" },
+      "processed_dir": { "type": "string", "default": "data/processed" }
     },
     "required": ["db_password"]
   }

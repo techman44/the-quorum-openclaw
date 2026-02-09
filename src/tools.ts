@@ -1,4 +1,6 @@
 import { Pool } from 'pg';
+import { readdir, readFile, rename, mkdir } from 'node:fs/promises';
+import { join, extname, basename } from 'node:path';
 import {
   storeDocument,
   storeEvent,
@@ -21,6 +23,8 @@ export interface QuorumConfig {
   ollama_host: string;
   ollama_embed_model: string;
   embedding_dim: number;
+  inbox_dir: string;
+  processed_dir: string;
 }
 
 /**
@@ -574,6 +578,167 @@ export function registerTools(api: any, pool: Pool, config: QuorumConfig): void 
       return {
         overall_status: allHealthy ? 'healthy' : 'degraded',
         integrations,
+      };
+    },
+  });
+
+  // ─── quorum_scan_inbox ──────────────────────────────────────────────────
+
+  api.registerTool({
+    name: 'quorum_scan_inbox',
+    description:
+      'Scan the inbox directory for new files, ingest them into The Quorum memory system, and move them to the processed directory. Each file is stored as a document with its type inferred from the file extension, then queued for embedding.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        inbox_path: {
+          type: 'string',
+          description:
+            'Override the default inbox directory path. If not provided, uses the configured inbox_dir.',
+        },
+        dry_run: {
+          type: 'boolean',
+          description:
+            'If true, list the files that would be ingested without actually processing them. Defaults to false.',
+        },
+      },
+    },
+    handler: async (input: { inbox_path?: string; dry_run?: boolean }) => {
+      const inboxDir = input.inbox_path ?? config.inbox_dir;
+      const processedDir = config.processed_dir;
+      const dryRun = input.dry_run ?? false;
+
+      // Ensure directories exist
+      await mkdir(inboxDir, { recursive: true });
+      await mkdir(processedDir, { recursive: true });
+
+      // Map file extensions to doc_type
+      function docTypeFromExtension(ext: string): string {
+        switch (ext.toLowerCase()) {
+          case '.eml':
+            return 'email';
+          case '.html':
+          case '.htm':
+            return 'web';
+          case '.md':
+          case '.txt':
+            return 'note';
+          case '.json':
+          case '.csv':
+            return 'record';
+          default:
+            return 'file';
+        }
+      }
+
+      let entries: string[];
+      try {
+        const dirEntries = await readdir(inboxDir, { withFileTypes: true });
+        entries = dirEntries
+          .filter((e) => e.isFile())
+          .map((e) => e.name);
+      } catch (err: unknown) {
+        const message = err instanceof Error ? err.message : String(err);
+        return {
+          error: `Failed to read inbox directory: ${message}`,
+          inbox_path: inboxDir,
+        };
+      }
+
+      if (entries.length === 0) {
+        return {
+          inbox_path: inboxDir,
+          files_found: 0,
+          message: 'No files found in inbox directory.',
+        };
+      }
+
+      // Dry run: just list files
+      if (dryRun) {
+        return {
+          inbox_path: inboxDir,
+          dry_run: true,
+          files_found: entries.length,
+          files: entries.map((name) => ({
+            name,
+            doc_type: docTypeFromExtension(extname(name)),
+          })),
+        };
+      }
+
+      // Process each file
+      const results: Array<{
+        file: string;
+        doc_id: string;
+        doc_type: string;
+        title: string;
+        embedding_status: string;
+        moved_to: string;
+      }> = [];
+      const errors: Array<{ file: string; error: string }> = [];
+
+      for (const fileName of entries) {
+        const filePath = join(inboxDir, fileName);
+        try {
+          const content = await readFile(filePath, 'utf-8');
+          const ext = extname(fileName);
+          const docType = docTypeFromExtension(ext);
+          const title = basename(fileName, ext);
+
+          // Store the document
+          const doc = await storeDocument(pool, {
+            doc_type: docType,
+            title,
+            content,
+            metadata: {
+              source: 'inbox',
+              original_filename: fileName,
+              ingested_at: new Date().toISOString(),
+            },
+            tags: ['inbox', docType],
+          });
+
+          // Embed (best effort)
+          let embeddingStatus = 'pending';
+          try {
+            const textToEmbed = `${doc.title}\n\n${doc.content}`;
+            const result = await embedAndStore(pool, embedConfig, 'document', doc.id, textToEmbed);
+            embeddingStatus = result.embedded ? 'stored' : 'already_current';
+          } catch (embErr: unknown) {
+            const embMessage = embErr instanceof Error ? embErr.message : String(embErr);
+            embeddingStatus = `failed: ${embMessage}`;
+            console.error(`[the-quorum] Embedding failed for inbox file ${fileName}: ${embMessage}`);
+          }
+
+          // Move to processed directory with timestamp prefix
+          const timestamp = new Date().toISOString().replace(/[:.]/g, '-');
+          const processedName = `${timestamp}_${fileName}`;
+          const processedPath = join(processedDir, processedName);
+          await rename(filePath, processedPath);
+
+          results.push({
+            file: fileName,
+            doc_id: doc.id,
+            doc_type: docType,
+            title: doc.title,
+            embedding_status: embeddingStatus,
+            moved_to: processedName,
+          });
+        } catch (err: unknown) {
+          const message = err instanceof Error ? err.message : String(err);
+          errors.push({ file: fileName, error: message });
+          console.error(`[the-quorum] Failed to process inbox file ${fileName}: ${message}`);
+        }
+      }
+
+      return {
+        inbox_path: inboxDir,
+        processed_dir: processedDir,
+        files_found: entries.length,
+        files_ingested: results.length,
+        files_errored: errors.length,
+        results,
+        ...(errors.length > 0 ? { errors } : {}),
       };
     },
   });
