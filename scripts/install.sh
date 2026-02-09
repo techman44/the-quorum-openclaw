@@ -524,7 +524,100 @@ else
     warn "setup-cron.sh not found -- skipping cron setup."
 fi
 
-# ── 15. Final health check ──────────────────────────────────────────────
+# ── 15. Optional inbox share ──────────────────────────────────────────────
+header "Inbox folder sharing"
+
+INBOX_DIR="$PROJECT_DIR/data/inbox"
+mkdir -p "$INBOX_DIR"
+
+echo ""
+echo "  The inbox folder is where you drop files for the Data Collector"
+echo "  to ingest into the memory system."
+echo ""
+echo "  Path: $INBOX_DIR"
+echo ""
+echo "  If this machine is a remote server, you can share the inbox"
+echo "  folder on your network so you can drop files in from other devices."
+echo ""
+
+if prompt_yn "Share the inbox folder via Samba (network file share)?" "n"; then
+    # Check if samba is installed
+    if ! command -v smbd &>/dev/null; then
+        info "Samba is not installed. Attempting to install..."
+        if command -v apt-get &>/dev/null; then
+            sudo apt-get update -qq && sudo apt-get install -y -qq samba >/dev/null 2>&1
+        elif command -v yum &>/dev/null; then
+            sudo yum install -y -q samba >/dev/null 2>&1
+        elif command -v dnf &>/dev/null; then
+            sudo dnf install -y -q samba >/dev/null 2>&1
+        else
+            error "Could not install Samba automatically. Install it manually and re-run."
+        fi
+    fi
+
+    if command -v smbd &>/dev/null; then
+        # Get the user who should own the share
+        SHARE_USER="${SUDO_USER:-$(whoami)}"
+
+        # Add Samba config block if not already present
+        if ! grep -q "\[quorum-inbox\]" /etc/samba/smb.conf 2>/dev/null; then
+            sudo tee -a /etc/samba/smb.conf >/dev/null <<SMBEOF
+
+[quorum-inbox]
+   comment = The Quorum - Inbox
+   path = $INBOX_DIR
+   browseable = yes
+   read only = no
+   guest ok = no
+   valid users = $SHARE_USER
+   create mask = 0644
+   directory mask = 0755
+SMBEOF
+            info "Added [quorum-inbox] share to /etc/samba/smb.conf"
+        else
+            info "[quorum-inbox] share already exists in smb.conf"
+        fi
+
+        # Set Samba password for the user
+        echo ""
+        info "Set a Samba password for user '$SHARE_USER' to access the share:"
+        sudo smbpasswd -a "$SHARE_USER"
+
+        # Restart Samba
+        if systemctl is-active smbd &>/dev/null || systemctl list-unit-files smbd.service &>/dev/null; then
+            sudo systemctl restart smbd
+            sudo systemctl enable smbd 2>/dev/null || true
+        fi
+
+        # Get machine IP for connection instructions
+        MACHINE_IP=$(hostname -I 2>/dev/null | awk '{print $1}' || echo "<server-ip>")
+
+        echo ""
+        success "Inbox shared via Samba."
+        echo ""
+        echo "  Connect from your devices:"
+        echo ""
+        echo "    Mac Finder:     smb://$MACHINE_IP/quorum-inbox"
+        echo "    Windows:        \\\\$MACHINE_IP\\quorum-inbox"
+        echo "    Linux:          smb://$MACHINE_IP/quorum-inbox"
+        echo ""
+        echo "  Login with user '$SHARE_USER' and the password you just set."
+        echo ""
+        echo "  Drop any file into this share and the Data Collector will"
+        echo "  ingest it on its next run (every 30 minutes)."
+        echo ""
+    else
+        warn "Samba installation failed. You can set it up manually later."
+        echo "  The inbox folder is still at: $INBOX_DIR"
+        echo ""
+    fi
+else
+    info "Skipping inbox share. You can access it directly at:"
+    echo "  $INBOX_DIR"
+    echo ""
+fi
+
+# ── 16. Final health check ──────────────────────────────────────────────
 header "Final health check"
 
 HEALTH_OK=true

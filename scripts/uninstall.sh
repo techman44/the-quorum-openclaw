@@ -163,7 +163,24 @@ if [ -d "$PROJECT_DIR/node_modules" ]; then
     fi
 fi
 
-# ── 5. Restart OpenClaw gateway ──────────────────────────────────────────
+# ── 5. Remove Samba share ────────────────────────────────────────────────
+header "Samba share"
+
+if grep -q "\[quorum-inbox\]" /etc/samba/smb.conf 2>/dev/null; then
+    if prompt_yn "Remove the quorum-inbox Samba share?" "y"; then
+        sudo sed -i '/\[quorum-inbox\]/,/^$/d' /etc/samba/smb.conf
+        if systemctl is-active smbd &>/dev/null; then
+            sudo systemctl restart smbd
+        fi
+        success "Removed quorum-inbox Samba share."
+    else
+        info "Keeping Samba share."
+    fi
+else
+    info "No quorum-inbox Samba share found."
+fi
+
+# ── 6. Restart OpenClaw gateway ──────────────────────────────────────────
 header "Restarting OpenClaw gateway"
 
 if command -v openclaw &>/dev/null; then
