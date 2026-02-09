@@ -58,10 +58,6 @@ if [ "$OS_TYPE" = "Darwin" ]; then
     IS_MAC=true
 fi
 
-# ── Ensure DBUS session bus is available (headless / SSH environments) ────
-if [ "$IS_MAC" = false ] && [ -z "${DBUS_SESSION_BUS_ADDRESS:-}" ] && [ -S "${XDG_RUNTIME_DIR:-/run/user/$(id -u)}/bus" ]; then
-    export DBUS_SESSION_BUS_ADDRESS="unix:path=${XDG_RUNTIME_DIR:-/run/user/$(id -u)}/bus"
-fi
 
 # ═══════════════════════════════════════════════════════════════════════════
 echo ""
@@ -358,26 +354,11 @@ success "Quorum skills installed into $SKILLS_DIR."
 # ── 12. Restart gateway to load plugin and skills ────────────────────────
 header "Restarting OpenClaw gateway"
 
-if [ "$IS_MAC" = true ]; then
-    # macOS: use openclaw CLI or launchctl
-    if openclaw gateway restart &>/dev/null; then
-        sleep 2
-        success "Gateway restarted with plugin and skills loaded."
-    elif launchctl list 2>/dev/null | grep -qi openclaw; then
-        launchctl kickstart -k "gui/$(id -u)/openclaw-gateway" 2>/dev/null \
-            && sleep 2 && success "Gateway restarted via launchctl." \
-            || warn "Gateway service not found. Start it with: openclaw gateway install && openclaw daemon start"
-    else
-        warn "Gateway service not running. Start it with: openclaw gateway install && openclaw daemon start"
-    fi
+if openclaw gateway restart &>/dev/null; then
+    sleep 2
+    success "Gateway restarted with plugin and skills loaded."
 else
-    if systemctl --user is-active openclaw-gateway.service &>/dev/null; then
-        systemctl --user restart openclaw-gateway.service
-        sleep 2
-        success "Gateway restarted with plugin and skills loaded."
-    else
-        warn "Gateway service not running. Start it with: openclaw gateway install && openclaw daemon start"
-    fi
+    warn "Gateway service not running. Start it with: openclaw gateway install && openclaw daemon start"
 fi
 
 # ── 13. Workspace instructions for auto-retrieval ────────────────────────

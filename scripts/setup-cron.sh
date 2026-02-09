@@ -90,10 +90,6 @@ if ! command -v openclaw &>/dev/null; then
   exit 1
 fi
 
-# ── Ensure DBUS session bus is available (Linux only) ─────────────
-if [[ "$(uname -s)" != "Darwin" ]] && [ -z "${DBUS_SESSION_BUS_ADDRESS:-}" ] && [ -S "${XDG_RUNTIME_DIR:-/run/user/$(id -u)}/bus" ]; then
-    export DBUS_SESSION_BUS_ADDRESS="unix:path=${XDG_RUNTIME_DIR:-/run/user/$(id -u)}/bus"
-fi
 
 # ── Handle --remove ─────────────────────────────────────────────────
 
