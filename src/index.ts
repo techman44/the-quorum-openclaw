@@ -61,6 +61,7 @@ export default function register(api: any): void {
 
   // ─── Register CLI Commands ───────────────────────────────────────────────
 
+  try {
   api.registerCommand({
     name: 'quorum',
     description: 'The Quorum memory management commands',
@@ -234,9 +235,14 @@ export default function register(api: any): void {
       },
     },
   });
+  } catch (err: unknown) {
+    const message = err instanceof Error ? err.message : String(err);
+    console.warn(`[the-quorum] Command registration skipped: ${message}`);
+  }
 
   // ─── Register Background Service (Embedding Queue Processor) ─────────────
 
+  try {
   api.registerService({
     id: 'quorum-embedding-queue',
     name: 'quorum-embedding-queue',
@@ -256,6 +262,10 @@ export default function register(api: any): void {
       }
     },
   });
+  } catch (err: unknown) {
+    const message = err instanceof Error ? err.message : String(err);
+    console.warn(`[the-quorum] Service registration skipped: ${message}`);
+  }
 
   // ─── Lifecycle: Schema initialization on startup ─────────────────────────
 

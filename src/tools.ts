@@ -1,6 +1,15 @@
 import { Pool } from 'pg';
 import { readdir, readFile, rename, mkdir } from 'node:fs/promises';
 import { join, extname, basename } from 'node:path';
+// pdf-parse is loaded dynamically so PDF support is optional
+let pdfParse: ((buf: Buffer) => Promise<{ text: string }>) | null = null;
+try {
+  // eslint-disable-next-line @typescript-eslint/no-require-imports
+  const mod = require('pdf-parse');
+  pdfParse = typeof mod === 'function' ? mod : (mod.default ?? mod.PDFParse ?? null);
+} catch {
+  // pdf-parse not installed - PDF files will be skipped
+}
 import {
   storeDocument,
   storeEvent,
@@ -736,10 +745,29 @@ export function registerTools(api: any, pool: Pool, config: QuorumConfig): void 
       const errors: Array<{ file: string; error: string }> = [];
 
       for (const fileName of entries) {
+        // Skip macOS metadata and hidden files
+        if (fileName.startsWith('.') || fileName.startsWith('._')) {
+          continue;
+        }
+
         const filePath = join(inboxDir, fileName);
         try {
-          const content = await readFile(filePath, 'utf-8');
-          const ext = extname(fileName);
+          const ext = extname(fileName).toLowerCase();
+          let content: string;
+
+          if (ext === '.pdf') {
+            if (!pdfParse) {
+              throw new Error('PDF support not available (install pdf-parse: npm install pdf-parse)');
+            }
+            const pdfBuffer = await readFile(filePath);
+            const pdfData = await pdfParse(pdfBuffer);
+            content = pdfData.text || '';
+            if (!content.trim()) {
+              throw new Error('PDF contains no extractable text (may be image-only)');
+            }
+          } else {
+            content = await readFile(filePath, 'utf-8');
+          }
           const docType = docTypeFromExtension(ext);
           const title = basename(fileName, ext);
 

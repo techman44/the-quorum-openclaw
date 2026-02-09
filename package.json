@@ -4,18 +4,21 @@
   "description": "The Quorum - AI conscience agents with persistent memory for OpenClaw",
   "main": "dist/index.js",
   "openclaw": {
-    "extensions": ["dist/index.js"]
+    "extensions": [
+      "dist/index.js"
+    ]
   },
   "scripts": {
     "build": "tsc",
     "lint": "eslint src/"
   },
   "dependencies": {
+    "pdf-parse": "^2.4.5",
     "pg": "^8.13.0"
   },
   "devDependencies": {
-    "typescript": "^5.5.0",
-    "@types/pg": "^8.11.0"
+    "@types/pg": "^8.11.0",
+    "typescript": "^5.5.0"
   },
   "license": "MIT",
   "repository": {

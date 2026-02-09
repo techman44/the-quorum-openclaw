@@ -1,0 +1,11 @@
+# Ignore all files in inbox and processed directories
+inbox/*
+processed/*
+
+# But keep the directories themselves
+!inbox/.gitkeep
+!processed/.gitkeep
+
+# macOS junk
+.DS_Store
+._*

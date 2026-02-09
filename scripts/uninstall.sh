@@ -110,7 +110,22 @@ else
     info "No Quorum skills found."
 fi
 
-# ── 4. Stop and remove Docker services ───────────────────────────────────
+# ── 4. Remove workspace instructions ────────────────────────────────────
+header "Removing workspace instructions"
+
+WORKSPACE_AGENTS="${HOME}/.openclaw/workspace/AGENTS.md"
+QUORUM_MARKER="## The Quorum - Memory System"
+if [ -f "$WORKSPACE_AGENTS" ] && grep -q "$QUORUM_MARKER" "$WORKSPACE_AGENTS" 2>/dev/null; then
+    # Remove the Quorum section (from marker to end of file, or to next ## heading)
+    sed -i "/$QUORUM_MARKER/,\$d" "$WORKSPACE_AGENTS" 2>/dev/null || true
+    # Clean up trailing blank lines
+    sed -i -e :a -e '/^\n*$/{$d;N;ba' -e '}' "$WORKSPACE_AGENTS" 2>/dev/null || true
+    success "Removed Quorum instructions from AGENTS.md"
+else
+    info "No Quorum instructions found in workspace."
+fi
+
+# ── 5. Stop and remove Docker services ───────────────────────────────────
 header "Docker services"
 
 if command -v docker &>/dev/null; then

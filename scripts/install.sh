@@ -230,6 +230,14 @@ else
     exit 1
 fi
 
+# Force-set the DB password (POSTGRES_PASSWORD env var only applies on first initdb).
+# On re-installs where the volume already exists, the password may not match.
+info "Ensuring database password is set correctly..."
+docker exec quorum-db psql -U "$DB_USER" -d "$DB_NAME" \
+    -c "ALTER USER $DB_USER WITH PASSWORD '$DB_PASSWORD';" >/dev/null 2>&1 \
+    && success "Database password verified." \
+    || warn "Could not set password (non-critical if auth is trust-based)."
+
 # ── 7. Wait for Ollama ──────────────────────────────────────────────────
 header "Waiting for Ollama"
 
@@ -351,7 +359,63 @@ else
     warn "Gateway service not running. Start it with: openclaw gateway install && openclaw daemon start"
 fi
 
-# ── 13. Onboarding ───────────────────────────────────────────────────────
+# ── 13. Workspace instructions for auto-retrieval ────────────────────────
+header "Workspace instructions"
+
+WORKSPACE_DIR="${HOME}/.openclaw/workspace"
+mkdir -p "$WORKSPACE_DIR"
+
+QUORUM_MARKER="## The Quorum - Memory System"
+
+# Append Quorum instructions to AGENTS.md if not already present
+if [ -f "$WORKSPACE_DIR/AGENTS.md" ]; then
+    if ! grep -q "$QUORUM_MARKER" "$WORKSPACE_DIR/AGENTS.md" 2>/dev/null; then
+        cat >> "$WORKSPACE_DIR/AGENTS.md" <<'AGENTSEOF'
+
+## The Quorum - Memory System
+
+You have access to The Quorum memory tools. Use them proactively:
+
+**Before responding to any substantive question or task:**
+1. Use `quorum_search` to check if relevant information exists in the memory database.
+2. Use `quorum_list_tasks` to check for related pending tasks.
+
+**After meaningful conversations:**
+3. Use `quorum_store` to save important information, decisions, and insights.
+4. Use `quorum_store_event` to record significant events (decisions, insights, critiques).
+5. Use `quorum_create_task` to track action items and commitments.
+
+The memory database contains your long-term knowledge. Do not skip the search step -- the
+information may already be there from past conversations or from the conscience agents
+(Connector, Executor, Strategist, Devil's Advocate, Opportunist) that run on schedules.
+AGENTSEOF
+        success "Added Quorum instructions to AGENTS.md"
+    else
+        info "Quorum instructions already present in AGENTS.md"
+    fi
+else
+    cat > "$WORKSPACE_DIR/AGENTS.md" <<'AGENTSEOF'
+## The Quorum - Memory System
+
+You have access to The Quorum memory tools. Use them proactively:
+
+**Before responding to any substantive question or task:**
+1. Use `quorum_search` to check if relevant information exists in the memory database.
+2. Use `quorum_list_tasks` to check for related pending tasks.
+
+**After meaningful conversations:**
+3. Use `quorum_store` to save important information, decisions, and insights.
+4. Use `quorum_store_event` to record significant events (decisions, insights, critiques).
+5. Use `quorum_create_task` to track action items and commitments.
+
+The memory database contains your long-term knowledge. Do not skip the search step -- the
+information may already be there from past conversations or from the conscience agents
+(Connector, Executor, Strategist, Devil's Advocate, Opportunist) that run on schedules.
+AGENTSEOF
+    success "Created AGENTS.md with Quorum instructions"
+fi
+
+# ── 14. Onboarding ───────────────────────────────────────────────────────
 header "Onboarding"
 
 echo ""
@@ -431,7 +495,7 @@ else
     echo ""
 fi
 
-# ── 14. Optional cron setup ─────────────────────────────────────────────
+# ── 15. Optional cron setup ─────────────────────────────────────────────
 header "Cron schedule"
 
 echo ""
@@ -447,7 +511,7 @@ else
     warn "setup-cron.sh not found -- skipping cron setup."
 fi
 
-# ── 15. Optional inbox share ──────────────────────────────────────────────
+# ── 16. Optional inbox share ──────────────────────────────────────────────
 header "Inbox folder sharing"
 
 INBOX_DIR="$PROJECT_DIR/data/inbox"
@@ -540,7 +604,7 @@ else
     echo ""
 fi
 
-# ── 16. Final health check ──────────────────────────────────────────────
+# ── 17. Final health check ──────────────────────────────────────────────
 header "Final health check"
 
 HEALTH_OK=true
