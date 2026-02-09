@@ -88,7 +88,25 @@ else
     warn "OpenClaw not found, skipping plugin removal."
 fi
 
-# ── 3. Stop and remove Docker services ───────────────────────────────────
+# ── 3. Remove skill symlinks ─────────────────────────────────────────────
+header "Removing skills"
+
+SKILLS_DIR="${HOME}/.openclaw/skills"
+REMOVED_SKILLS=0
+for link in "$SKILLS_DIR"/quorum-*; do
+    if [ -L "$link" ] || [ -d "$link" ]; then
+        rm -rf "$link"
+        info "Removed: $(basename "$link")"
+        REMOVED_SKILLS=$((REMOVED_SKILLS + 1))
+    fi
+done
+if [ "$REMOVED_SKILLS" -gt 0 ]; then
+    success "Removed $REMOVED_SKILLS Quorum skill(s)."
+else
+    info "No Quorum skills found."
+fi
+
+# ── 4. Stop and remove Docker services ───────────────────────────────────
 header "Docker services"
 
 if command -v docker &>/dev/null; then

@@ -12,15 +12,15 @@ Usage: $(basename "$0") [OPTIONS]
 Set up (or remove) The Quorum cron jobs for OpenClaw.
 
 Options:
-  --remove      Remove all existing Quorum cron jobs and exit
-  --chat-id ID  Telegram chat ID (skips interactive prompt)
-  --channel CH  Notification channel: telegram or whatsapp (default: telegram)
-  -h, --help    Show this help message
+  --remove         Remove all existing Quorum cron jobs and exit
+  --channel CH     Override notification channel (default: OpenClaw session)
+  --to DEST        Override delivery destination (Telegram chatId, etc.)
+  -h, --help       Show this help message
 
 Examples:
-  $(basename "$0")                          # Interactive setup
-  $(basename "$0") --chat-id 123456789      # Non-interactive setup
-  $(basename "$0") --remove                 # Remove all Quorum cron jobs
+  $(basename "$0")                                          # Default setup (OpenClaw chat)
+  $(basename "$0") --channel telegram --to 123456789        # Deliver via Telegram
+  $(basename "$0") --remove                                 # Remove all Quorum cron jobs
 EOF
   exit 0
 }
@@ -29,7 +29,6 @@ remove_quorum_jobs() {
   echo "Removing existing Quorum cron jobs..."
   local found=0
 
-  # List cron jobs and find quorum ones
   while IFS= read -r line; do
     local job_id job_name
     job_id=$(echo "$line" | awk '{print $1}')
@@ -51,8 +50,8 @@ remove_quorum_jobs() {
 
 # ── Parse arguments ─────────────────────────────────────────────────
 
-CHAT_ID=""
-CHANNEL="telegram"
+CHANNEL=""
+TO_DEST=""
 REMOVE=false
 
 while [[ $# -gt 0 ]]; do
@@ -61,12 +60,12 @@ while [[ $# -gt 0 ]]; do
       REMOVE=true
       shift
       ;;
-    --chat-id)
-      CHAT_ID="$2"
-      shift 2
-      ;;
     --channel)
       CHANNEL="$2"
+      shift 2
+      ;;
+    --to)
+      TO_DEST="$2"
       shift 2
       ;;
     -h|--help)
@@ -87,6 +86,11 @@ if ! command -v openclaw &>/dev/null; then
   exit 1
 fi
 
+# ── Ensure DBUS session bus is available ───────────────────────────
+if [ -z "${DBUS_SESSION_BUS_ADDRESS:-}" ] && [ -S "${XDG_RUNTIME_DIR:-/run/user/$(id -u)}/bus" ]; then
+    export DBUS_SESSION_BUS_ADDRESS="unix:path=${XDG_RUNTIME_DIR:-/run/user/$(id -u)}/bus"
+fi
+
 # ── Handle --remove ─────────────────────────────────────────────────
 
 if [[ "$REMOVE" == true ]]; then
@@ -96,43 +100,30 @@ if [[ "$REMOVE" == true ]]; then
   exit 0
 fi
 
-# ── Interactive setup ───────────────────────────────────────────────
+# ── Build delivery flags ────────────────────────────────────────────
+
+# By default, agents announce through the OpenClaw session (--channel last).
+# Override with --channel and --to for external delivery (Telegram, WhatsApp, etc.)
+DELIVERY_FLAGS="--announce"
+if [[ -n "$CHANNEL" ]]; then
+  DELIVERY_FLAGS="$DELIVERY_FLAGS --channel $CHANNEL"
+fi
+if [[ -n "$TO_DEST" ]]; then
+  DELIVERY_FLAGS="$DELIVERY_FLAGS --to $TO_DEST"
+fi
+
+# ── Setup ───────────────────────────────────────────────────────────
 
 echo "============================================"
 echo "  The Quorum - OpenClaw Cron Setup"
 echo "============================================"
 echo ""
 
-# Ask for channel preference if not provided
-if [[ -z "$CHAT_ID" ]]; then
-  echo "Which notification channel do you want to use?"
-  echo "  1) Telegram (default)"
-  echo "  2) WhatsApp"
-  echo ""
-  read -rp "Choice [1]: " channel_choice
-  channel_choice="${channel_choice:-1}"
-
-  case "$channel_choice" in
-    1) CHANNEL="telegram" ;;
-    2) CHANNEL="whatsapp" ;;
-    *)
-      echo "Invalid choice. Using Telegram."
-      CHANNEL="telegram"
-      ;;
-  esac
-
-  echo ""
-  read -rp "Enter your ${CHANNEL} chat ID: " CHAT_ID
-
-  if [[ -z "$CHAT_ID" ]]; then
-    echo "Error: Chat ID is required."
-    exit 1
-  fi
+if [[ -n "$CHANNEL" ]] && [[ -n "$TO_DEST" ]]; then
+  echo "Delivery: $CHANNEL -> $TO_DEST"
+else
+  echo "Delivery: OpenClaw session (default)"
 fi
-
-echo ""
-echo "Channel:  $CHANNEL"
-echo "Chat ID:  $CHAT_ID"
 echo ""
 
 # Check for existing quorum jobs
@@ -164,10 +155,8 @@ openclaw cron add \
   --name "quorum-connector" \
   --cron "*/15 * * * *" \
   --session isolated \
-  --message "You are running as The Connector from The Quorum. Search recent conversation history and memory for meaningful connections between current activity and past knowledge. Use the quorum_search tool to find related past documents, events, and conversations. Focus on non-obvious connections the user has forgotten or wouldn't think to link. If you find important connections, store them with quorum_store_event using event_type 'connection'. Include relevance scores. Summarize what you found." \
-  --announce \
-  --channel "$CHANNEL" \
-  --to "$CHAT_ID"
+  --message "You are running as The Connector from The Quorum. Search recent conversation history and memory for meaningful connections between current activity and past knowledge. Use the quorum_search tool to find related past documents, events, and conversations. Focus on non-obvious connections the user has forgotten or wouldn't think to link. Before your own analysis, check for events where metadata.considered_agents contains 'connector' -- these are findings other agents flagged for you. If you find important connections, store them with quorum_store_event using event_type 'insight'. Include a considered_agents list in the metadata tagging which other agents should see your finding. Summarize what you found." \
+  $DELIVERY_FLAGS
 
 # ── Executor: every hour ───────────────────────────────────────────
 
@@ -176,10 +165,8 @@ openclaw cron add \
   --name "quorum-executor" \
   --cron "0 * * * *" \
   --session isolated \
-  --message "You are running as The Executor from The Quorum. Review recent conversations and events for actionable items. Check existing tasks with quorum_list_tasks -- flag anything overdue or stale. Create new tasks from recent discussions using quorum_create_task. If the user hasn't acted on something important, call it out directly. Be specific about what was committed to and when. Do not sugarcoat procrastination." \
-  --announce \
-  --channel "$CHANNEL" \
-  --to "$CHAT_ID"
+  --message "You are running as The Executor from The Quorum. Review recent conversations and events for actionable items. Check existing tasks with quorum_list_tasks -- flag anything overdue or stale. Create new tasks from recent discussions using quorum_create_task. Before your own analysis, check for events where metadata.considered_agents contains 'executor' -- these are findings other agents flagged for you. If the user hasn't acted on something important, call it out directly. Be specific about what was committed to and when. Do not sugarcoat procrastination. Store observations with quorum_store_event using event_type 'observation'. Include a considered_agents list in the metadata." \
+  $DELIVERY_FLAGS
 
 # ── Strategist: daily at 6am ──────────────────────────────────────
 
@@ -188,11 +175,8 @@ openclaw cron add \
   --name "quorum-strategist" \
   --cron "0 6 * * *" \
   --session isolated \
-  --model "opus" \
-  --message "You are running as The Strategist from The Quorum. Perform a daily reflection. Search memory for the last 24 hours of events, tasks, and conversations. Identify patterns, recurring themes, blocked work, and strategic opportunities. Write a structured reflection document using quorum_store with doc_type 'reflection'. Assess what is working, what is stuck, and what needs attention. Reprioritize tasks if needed based on your strategic assessment. Think in terms of days and weeks, not hours." \
-  --announce \
-  --channel "$CHANNEL" \
-  --to "$CHAT_ID"
+  --message "You are running as The Strategist from The Quorum. Perform a daily reflection. Search memory for the last 24 hours of events, tasks, and conversations. Before your own analysis, check for events where metadata.considered_agents contains 'strategist' -- these are findings other agents flagged for you. Identify patterns, recurring themes, blocked work, and strategic opportunities. Write a structured reflection document using quorum_store with doc_type 'reflection'. Assess what is working, what is stuck, and what needs attention. Reprioritize tasks if needed. Store key insights with quorum_store_event using event_type 'insight'. Include a considered_agents list tagging all relevant agents." \
+  $DELIVERY_FLAGS
 
 # ── Devil's Advocate: every 4 hours ───────────────────────────────
 
@@ -201,10 +185,8 @@ openclaw cron add \
   --name "quorum-devils-advocate" \
   --cron "0 */4 * * *" \
   --session isolated \
-  --message "You are running as The Devil's Advocate from The Quorum. Search memory for recent decisions, plans, and high-priority tasks. Challenge assumptions: what could go wrong? What is being taken for granted? What data is missing? What alternatives were not considered? Store critiques with quorum_store_event using event_type 'critique'. Be constructive -- highlight risks AND suggest mitigations. Focus on high-importance decisions, do not nitpick trivial choices." \
-  --announce \
-  --channel "$CHANNEL" \
-  --to "$CHAT_ID"
+  --message "You are running as The Devil's Advocate from The Quorum. Search memory for recent decisions, plans, and high-priority tasks. Before your own analysis, check for events where metadata.considered_agents contains 'devils_advocate' -- these are findings other agents flagged for you. Challenge assumptions: what could go wrong? What is being taken for granted? What data is missing? What alternatives were not considered? Store critiques with quorum_store_event using event_type 'critique'. Be constructive -- highlight risks AND suggest mitigations. Include a considered_agents list in the metadata. Focus on high-importance decisions, do not nitpick trivial choices." \
+  $DELIVERY_FLAGS
 
 # ── Opportunist: every 6 hours ────────────────────────────────────
 
@@ -213,10 +195,8 @@ openclaw cron add \
   --name "quorum-opportunist" \
   --cron "0 */6 * * *" \
   --session isolated \
-  --message "You are running as The Opportunist from The Quorum. Scan memory for quick wins, reusable work, and hidden value across all projects and tasks. Look for: repeated manual work that could be automated, reusable code or docs, neglected high-impact tasks, cross-project connections, and compound investments that unblock multiple items. Store findings with quorum_store_event using event_type 'opportunity'. Create tasks for actionable opportunities. Focus on high-impact, low-effort items." \
-  --announce \
-  --channel "$CHANNEL" \
-  --to "$CHAT_ID"
+  --message "You are running as The Opportunist from The Quorum. Scan memory for quick wins, reusable work, and hidden value across all projects and tasks. Before your own analysis, check for events where metadata.considered_agents contains 'opportunist' -- these are findings other agents flagged for you. Look for: repeated manual work that could be automated, reusable code or docs, neglected high-impact tasks, cross-project connections, and compound investments that unblock multiple items. Store findings with quorum_store_event using event_type 'opportunity'. Create tasks for actionable opportunities using quorum_create_task. Include a considered_agents list in the metadata. Focus on high-impact, low-effort items." \
+  $DELIVERY_FLAGS
 
 # ── Data Collector: every 30 minutes ─────────────────────────────
 
@@ -226,9 +206,7 @@ openclaw cron add \
   --cron "*/30 * * * *" \
   --session isolated \
   --message "Use quorum_scan_inbox to check for new files in the inbox directory. For each file found, it will be automatically ingested, categorized, tagged, and embedded. Report what was processed." \
-  --announce \
-  --channel "$CHANNEL" \
-  --to "$CHAT_ID"
+  $DELIVERY_FLAGS
 
 echo ""
 echo "============================================"
@@ -242,6 +220,8 @@ echo "  Strategist .......... daily at 6:00 AM"
 echo "  Devil's Advocate .... every 4 hours"
 echo "  Opportunist ......... every 6 hours"
 echo "  Data Collector ...... every 30 minutes"
+echo ""
+echo "Delivery: ${CHANNEL:-OpenClaw session (default)}"
 echo ""
 echo "Run 'openclaw cron list' to verify."
 echo "Edit a job: openclaw cron edit <jobId>"

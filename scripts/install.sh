@@ -322,7 +322,58 @@ CFGEOF
 openclaw config set plugins.entries.the-quorum.config "$PLUGIN_CONFIG"
 success "Plugin configured with values from .env."
 
-# ── 12. Optional cron setup ─────────────────────────────────────────────
+# ── 11. Install skills into OpenClaw ─────────────────────────────────────
+header "Installing skills"
+
+SKILLS_DIR="${HOME}/.openclaw/skills"
+mkdir -p "$SKILLS_DIR"
+
+for skill_dir in "$PROJECT_DIR/skills"/*/; do
+    skill_name="$(basename "$skill_dir")"
+    target_name="quorum-${skill_name}"
+    if [ -L "$SKILLS_DIR/$target_name" ] || [ -d "$SKILLS_DIR/$target_name" ]; then
+        rm -rf "$SKILLS_DIR/$target_name"
+    fi
+    ln -sf "$skill_dir" "$SKILLS_DIR/$target_name"
+    info "  Linked skill: $target_name"
+done
+
+success "Quorum skills installed into $SKILLS_DIR."
+
+# ── 12. Restart gateway to load plugin and skills ────────────────────────
+header "Restarting OpenClaw gateway"
+
+if systemctl --user is-active openclaw-gateway.service &>/dev/null; then
+    systemctl --user restart openclaw-gateway.service
+    sleep 2
+    success "Gateway restarted with plugin and skills loaded."
+else
+    warn "Gateway service not running. Start it with: openclaw gateway install && openclaw daemon start"
+fi
+
+# ── 13. Onboarding ──────────────────────────────────────────────────────
+header "Onboarding"
+
+echo ""
+echo "  The Quorum works best when the agents know about you."
+echo "  The onboarding questionnaire asks about your background,"
+echo "  goals, priorities, and preferences so the agents have"
+echo "  real context from day one."
+echo ""
+
+if prompt_yn "Run the onboarding questionnaire now? (recommended)" "y"; then
+    echo ""
+    info "Starting onboarding... (this is an interactive conversation)"
+    echo ""
+    openclaw agent --message "Run the quorum-onboarding skill. Walk me through the full onboarding questionnaire for The Quorum."
+    echo ""
+    success "Onboarding session started."
+else
+    info "Skipping onboarding. You can run it later with:"
+    echo "  openclaw agent --message \"Run the quorum-onboarding skill\""
+fi
+
+# ── 14. Optional cron setup ─────────────────────────────────────────────
 header "Cron schedule"
 
 echo ""
@@ -338,7 +389,7 @@ else
     warn "setup-cron.sh not found -- skipping cron setup."
 fi
 
-# ── 13. Final health check ──────────────────────────────────────────────
+# ── 15. Final health check ──────────────────────────────────────────────
 header "Final health check"
 
 HEALTH_OK=true
@@ -372,7 +423,14 @@ if openclaw plugins list 2>/dev/null | grep -qi "quorum"; then
     success "The Quorum plugin is installed in OpenClaw."
 else
     warn "Could not verify plugin in OpenClaw (openclaw plugins list did not match)."
-    # Not a hard failure -- the command output format may vary
+fi
+
+# Check skills
+SKILLS_FOUND=$(openclaw skills list 2>/dev/null | grep -ci "quorum" || true)
+if [ "$SKILLS_FOUND" -gt 0 ]; then
+    success "$SKILLS_FOUND Quorum skills discovered by OpenClaw."
+else
+    warn "Could not verify skills in OpenClaw."
 fi
 
 if [ "$HEALTH_OK" = true ]; then
@@ -384,8 +442,14 @@ if [ "$HEALTH_OK" = true ]; then
     echo "Verify the plugin is loaded:"
     echo "  openclaw plugins list"
     echo ""
+    echo "List Quorum skills:"
+    echo "  openclaw skills list | grep quorum"
+    echo ""
     echo "Test the memory tools:"
-    echo "  openclaw run --message \"Use quorum_store to save a test note\""
+    echo "  openclaw agent --message \"Use quorum_store to save a test note\""
+    echo ""
+    echo "Run onboarding (if skipped):"
+    echo "  openclaw agent --message \"Run the quorum-onboarding skill\""
     echo ""
     echo "Manage Docker services:"
     echo "  cd $PROJECT_DIR && $COMPOSE_CMD ps"
