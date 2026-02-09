@@ -30,6 +30,17 @@ services:
     volumes:
       - ollama_data:/root/.ollama
     restart: unless-stopped
+    # ── GPU support (optional) ──────────────────────────────────────────
+    # Uncomment the block below if you have an NVIDIA GPU and the
+    # NVIDIA Container Toolkit installed. This enables GPU-accelerated
+    # embeddings (~60-90ms vs ~500ms+ on CPU). See README for details.
+    # deploy:
+    #   resources:
+    #     reservations:
+    #       devices:
+    #         - driver: nvidia
+    #           count: all
+    #           capabilities: [gpu]
 
 volumes:
   quorum_data:

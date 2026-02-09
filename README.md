@@ -10,6 +10,79 @@ An OpenClaw plugin that gives your AI agent long-term memory, self-awareness, an
 
 PostgreSQL, pgvector, Ollama, and the embedding model are all handled automatically via Docker -- you don't need to install them separately.
 
+## GPU Acceleration (Recommended)
+
+Ollama uses the `mxbai-embed-large` model to generate vector embeddings for semantic search. This works on **both CPU and GPU** -- no GPU is required to run The Quorum.
+
+- **CPU**: Works out of the box, no extra setup. Embedding requests take ~500ms+ each. Fine for small document sets or occasional use.
+- **GPU (NVIDIA)**: Recommended for bulk ingestion. Embedding requests drop to ~60-90ms each. When processing hundreds of document chunks, the difference is significant.
+
+The install script and Docker setup work on **any Linux distribution** -- Debian, Ubuntu, CentOS, Rocky, Fedora, etc. The host OS does not matter as long as Docker is available.
+
+### Enabling GPU Support
+
+If you have an NVIDIA GPU available, Ollama will detect and use it automatically as long as:
+
+1. **NVIDIA drivers** are installed on the host
+2. **[NVIDIA Container Toolkit](https://docs.nvidia.com/datacenter/cloud-native/container-toolkit/latest/install-guide.html)** is installed so Docker can access the GPU
+
+Once both are in place, uncomment the GPU section in `docker-compose.yml`:
+
+```yaml
+services:
+  ollama:
+    # ...
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: all
+              capabilities: [gpu]
+```
+
+Restart the containers and verify with:
+
+```bash
+docker compose up -d
+docker exec quorum-ollama nvidia-smi
+```
+
+### GPU Passthrough in Proxmox LXC
+
+If you're running inside a Proxmox LXC container (as opposed to bare metal or a VM), GPU passthrough requires extra configuration on the Proxmox host:
+
+1. **LXC config** (`/etc/pve/lxc/<VMID>.conf`) -- add cgroup device access and mount entries for each NVIDIA device:
+   ```
+   lxc.cgroup2.devices.allow: c 195:* rwm
+   lxc.cgroup2.devices.allow: c 505:* rwm
+   lxc.cgroup2.devices.allow: c 508:* rwm
+   lxc.mount.entry: /dev/nvidia0 dev/nvidia0 none bind,optional,create=file
+   lxc.mount.entry: /dev/nvidia1 dev/nvidia1 none bind,optional,create=file
+   lxc.mount.entry: /dev/nvidiactl dev/nvidiactl none bind,optional,create=file
+   lxc.mount.entry: /dev/nvidia-uvm dev/nvidia-uvm none bind,optional,create=file
+   lxc.mount.entry: /dev/nvidia-uvm-tools dev/nvidia-uvm-tools none bind,optional,create=file
+   lxc.mount.entry: /dev/nvidia-caps dev/nvidia-caps none bind,optional,create=dir
+   ```
+
+2. **NVIDIA driver inside the LXC** must match the host kernel module version exactly. Install using the `.run` installer with `--no-kernel-module`:
+   ```bash
+   # Check host driver version first (on the Proxmox host)
+   nvidia-smi
+
+   # Inside the LXC, install the matching version
+   ./NVIDIA-Linux-x86_64-<VERSION>.run --no-kernel-module --silent
+   ```
+
+3. **NVIDIA Container Toolkit** inside the LXC needs `no-cgroups = true` for unprivileged containers:
+   ```bash
+   # /etc/nvidia-container-runtime/config.toml
+   [nvidia-container-cli]
+   no-cgroups = true
+   ```
+
+4. Multiple LXC containers can share the same physical GPUs (time-sharing). Add mount entries for as many GPUs as you want to expose (`nvidia0`, `nvidia1`, etc.).
+
 ## Installation
 
 ```bash
