@@ -133,6 +133,45 @@ openclaw plugins config the-quorum --set inbox_dir=/path/to/custom/inbox
 openclaw plugins config the-quorum --set processed_dir=/path/to/custom/processed
 ```
 
+## Example: Gmail to Inbox via n8n
+
+You can use [n8n](https://n8n.io) to automatically feed emails into The Quorum without giving the system direct access to your Gmail account. The idea is simple: you label emails in Gmail, n8n watches for that label, and drops the content into `data/inbox/` where the Data Collector picks it up on its next run.
+
+**Setup:**
+
+1. **Create a Gmail label** called "Quorum" (or whatever name you prefer). Any email you tag with this label will be ingested into the memory system.
+
+2. **Create an n8n workflow** with the following node structure:
+
+```
+Gmail Trigger (label: "Quorum")
+  -> Extract body + attachments
+  -> Write to File (path: data/inbox/)
+```
+
+   - **Gmail Trigger node**: Configure it to watch for new emails with the "Quorum" label. n8n handles the OAuth connection to Gmail entirely on its own.
+   - **Process the email**: Extract the email body (plain text or HTML) and any attachments.
+   - **Write the email body to file**: Save it as a `.txt` or `.eml` file in `data/inbox/` with a descriptive filename like `sender_subject_2026-02-09.txt`.
+   - **Write attachments to file**: Save each attachment to `data/inbox/` using its original filename.
+
+3. **The Data Collector cron job** (running every 30 minutes) picks up all new files from `data/inbox/`, categorizes them by file type, generates embeddings for semantic search, and moves them to `data/processed/`.
+
+**Why this approach works well:**
+
+- **Gmail credentials stay in n8n**, not in The Quorum. The Quorum never touches your email account.
+- **You control exactly what enters the system** by choosing which emails to label. There is no background scanning of your inbox.
+- **Security-conscious by design.** The separation means a compromise of The Quorum does not expose your Gmail credentials, and vice versa.
+
+**This pattern works for any data source n8n supports.** The inbox directory is the universal entry point for external data. The same workflow structure applies to:
+
+- **Slack messages** -- trigger on a specific channel or reaction, write message content to `data/inbox/`
+- **Calendar events** -- trigger on new events, save event details as text files
+- **RSS feeds** -- trigger on new items, save articles to `data/inbox/`
+- **Webhooks** -- receive data from any service and write it to `data/inbox/`
+- **Notion, Airtable, Google Sheets** -- trigger on changes, export rows or pages as files
+
+Anything n8n can connect to becomes a data source for The Quorum, all flowing through the same `data/inbox/` directory that the Data Collector already monitors.
+
 ## Project Structure
 
 ```
