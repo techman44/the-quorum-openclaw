@@ -47,7 +47,7 @@ function buildConfig(apiConfig: Record<string, unknown> | undefined, pluginDir: 
 
 export default function register(api: any): void {
   const pluginDir = api.pluginDir ?? process.cwd();
-  const config = buildConfig(api.config, pluginDir);
+  const config = buildConfig(api.pluginConfig, pluginDir);
   const db = getPool(config);
   const embedConfig: EmbeddingConfig = {
     ollama_host: config.ollama_host,
