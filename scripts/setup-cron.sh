@@ -29,17 +29,21 @@ remove_quorum_jobs() {
   echo "Removing existing Quorum cron jobs..."
   local found=0
 
-  while IFS= read -r line; do
-    local job_id job_name
-    job_id=$(echo "$line" | awk '{print $1}')
-    job_name=$(echo "$line" | awk '{print $2}')
+  # Parse JSON output to find quorum jobs by name
+  local json
+  json=$(openclaw cron list --json 2>/dev/null || echo '{"jobs":[]}')
 
-    if [[ "$job_name" == ${QUORUM_PREFIX}* ]]; then
+  # Extract id and name pairs for quorum- prefixed jobs
+  while IFS=$'\t' read -r job_id job_name; do
+    if [[ -n "$job_id" && "$job_name" == ${QUORUM_PREFIX}* ]]; then
       echo "  Removing: $job_name ($job_id)"
-      openclaw cron remove "$job_id"
+      openclaw cron rm "$job_id" 2>/dev/null || true
       found=$((found + 1))
     fi
-  done < <(openclaw cron list --format plain 2>/dev/null || true)
+  done < <(echo "$json" | node -e "
+    const d = JSON.parse(require('fs').readFileSync('/dev/stdin','utf8'));
+    (d.jobs||[]).forEach(j => console.log(j.id + '\t' + (j.name||'')));
+  " 2>/dev/null || true)
 
   if [[ $found -eq 0 ]]; then
     echo "  No Quorum cron jobs found."
@@ -128,12 +132,11 @@ echo ""
 
 # Check for existing quorum jobs
 existing_count=0
-while IFS= read -r line; do
-  job_name=$(echo "$line" | awk '{print $2}')
-  if [[ "$job_name" == ${QUORUM_PREFIX}* ]]; then
-    existing_count=$((existing_count + 1))
-  fi
-done < <(openclaw cron list --format plain 2>/dev/null || true)
+existing_json=$(openclaw cron list --json 2>/dev/null || echo '{"jobs":[]}')
+existing_count=$(echo "$existing_json" | node -e "
+  const d = JSON.parse(require('fs').readFileSync('/dev/stdin','utf8'));
+  console.log((d.jobs||[]).filter(j => (j.name||'').startsWith('${QUORUM_PREFIX}')).length);
+" 2>/dev/null || echo "0")
 
 if [[ $existing_count -gt 0 ]]; then
   echo "Found $existing_count existing Quorum cron job(s)."

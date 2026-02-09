@@ -57,10 +57,14 @@ header "Removing cron jobs"
 
 if command -v openclaw &>/dev/null; then
     # List and remove any quorum cron jobs
-    CRON_IDS=$(openclaw cron list 2>/dev/null | grep -i "quorum" | awk '{print $1}' || true)
+    CRON_JSON=$(openclaw cron list --json 2>/dev/null || echo '{"jobs":[]}')
+    CRON_IDS=$(echo "$CRON_JSON" | node -e "
+      const d = JSON.parse(require('fs').readFileSync('/dev/stdin','utf8'));
+      (d.jobs||[]).filter(j => (j.name||'').startsWith('quorum-')).forEach(j => console.log(j.id));
+    " 2>/dev/null || true)
     if [ -n "$CRON_IDS" ]; then
         for cron_id in $CRON_IDS; do
-            openclaw cron remove "$cron_id" 2>/dev/null && info "Removed cron job: $cron_id" || true
+            openclaw cron rm "$cron_id" 2>/dev/null && info "Removed cron job: $cron_id" || true
         done
         success "Quorum cron jobs removed."
     else
