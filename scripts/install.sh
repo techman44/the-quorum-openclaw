@@ -359,32 +359,21 @@ echo "  The Quorum works best when the agents know about you."
 echo "  Let's capture some basics so the agents have context from day one."
 echo ""
 
-if prompt_yn "Run the quick onboarding questionnaire now?" "y"; then
+if prompt_yn "Run the quick onboarding now?" "y"; then
     echo ""
 
-    # ── Name ──
-    read -rp "$(printf "${BOLD}What's your name? ${NC}")" OB_NAME
-    OB_NAME="${OB_NAME:-User}"
+    # ── Step 1: Resume ──
+    echo "Paste your resume below. The agents will extract your name, role,"
+    echo "career history, skills, and projects from it automatically."
+    echo ""
+    echo "After pasting, press Enter then Ctrl+D to finish."
+    echo "(Or just press Ctrl+D to skip if you don't have one handy.)"
+    echo ""
+    OB_RESUME=""
+    OB_RESUME="$(cat 2>/dev/null || true)"
     echo ""
 
-    # ── Role ──
-    read -rp "$(printf "${BOLD}What do you do? (current role, company, freelancing, etc.) ${NC}")
-> " OB_ROLE
-    echo ""
-
-    # ── Projects ──
-    echo "What are the main projects or areas you're focused on right now?"
-    echo "(Work projects, side projects, personal goals -- list as many as you like.)"
-    read -rp "> " OB_PROJECTS
-    echo ""
-
-    # ── Priorities ──
-    echo "What are your top 3 priorities right now? The things that, if you made"
-    echo "real progress on them this month, you'd feel good about?"
-    read -rp "> " OB_PRIORITIES
-    echo ""
-
-    # ── Accountability depth ──
+    # ── Step 2: Accountability depth ──
     echo "How deeply should the agents analyse and push back?"
     echo "  1) Light    -- Quick summaries, surface-level observations"
     echo "  2) Standard -- Detailed reflections, proactive suggestions (recommended)"
@@ -397,7 +386,7 @@ if prompt_yn "Run the quick onboarding questionnaire now?" "y"; then
     esac
     echo ""
 
-    # ── Communication style ──
+    # ── Step 3: Communication style ──
     echo "How direct should the agents be when calling out procrastination"
     echo "or missed commitments?"
     echo "  1) Gentle  -- Supportive nudges, encouraging tone"
@@ -411,45 +400,6 @@ if prompt_yn "Run the quick onboarding questionnaire now?" "y"; then
     esac
     echo ""
 
-    # ── LinkedIn or resume ──
-    echo "Do you have a LinkedIn profile URL or resume you can share?"
-    echo "This gives the agents instant career context -- your history,"
-    echo "skills, roles, and companies."
-    echo ""
-    echo "  1) Paste a LinkedIn URL"
-    echo "  2) Paste resume text"
-    echo "  3) Skip for now"
-    read -rp "$(printf "${BOLD}Choose [1/2/3]: ${NC}")" OB_RESUME_CHOICE
-    OB_LINKEDIN=""
-    OB_RESUME=""
-    case "$OB_RESUME_CHOICE" in
-        1)
-            read -rp "$(printf "${BOLD}LinkedIn URL: ${NC}")" OB_LINKEDIN
-            echo ""
-            ;;
-        2)
-            echo ""
-            echo "Paste your resume text below. When done, press Enter on an"
-            echo "empty line, then type END and press Enter."
-            OB_RESUME=""
-            while IFS= read -r line; do
-                [ "$line" = "END" ] && break
-                OB_RESUME="${OB_RESUME}${line}
-"
-            done
-            echo ""
-            ;;
-        *)
-            echo ""
-            ;;
-    esac
-
-    # ── Optional: extra context ──
-    echo "Anything else the agents should know about you?"
-    echo "(Goals, preferences, things to track -- or press Enter to skip)"
-    read -rp "> " OB_EXTRA
-    echo ""
-
     # ── Write onboarding file to inbox ──
     INBOX_DIR="$PROJECT_DIR/data/inbox"
     mkdir -p "$INBOX_DIR"
@@ -458,53 +408,26 @@ if prompt_yn "Run the quick onboarding questionnaire now?" "y"; then
     cat > "$ONBOARDING_FILE" <<OBEOF
 # User Profile - Onboarding
 
-## About
-- **Name:** $OB_NAME
-- **Role:** $OB_ROLE
-
-## Current Projects and Focus Areas
-$OB_PROJECTS
-
-## Top Priorities
-$OB_PRIORITIES
-
 ## System Preferences
 - **Analysis depth:** $OB_DEPTH
 - **Accountability style:** $OB_STYLE
 
 OBEOF
 
-    if [ -n "$OB_LINKEDIN" ]; then
-        cat >> "$ONBOARDING_FILE" <<OBLINKEDIN
-## LinkedIn Profile
-$OB_LINKEDIN
-
-OBLINKEDIN
-    fi
-
     if [ -n "$OB_RESUME" ]; then
         cat >> "$ONBOARDING_FILE" <<OBRESUME
 ## Resume
 $OB_RESUME
-
 OBRESUME
-    fi
-
-    if [ -n "$OB_EXTRA" ]; then
-        cat >> "$ONBOARDING_FILE" <<OBEXTRA
-## Additional Context
-$OB_EXTRA
-
-OBEXTRA
     fi
 
     success "Onboarding profile saved to data/inbox/onboarding-profile.md"
     info "The Data Collector will ingest this into the memory system on its next run."
-    info "You can also run a deeper interactive onboarding later through OpenClaw chat."
+    info "The agents will extract your name, role, skills, and history from your resume."
     echo ""
 else
-    info "Skipping onboarding. You can run it later through OpenClaw chat:"
-    echo "  Open OpenClaw and say: Run the quorum-onboarding skill"
+    info "Skipping onboarding. Drop your resume into data/inbox/ later"
+    info "and the Data Collector will pick it up automatically."
     echo ""
 fi
 
