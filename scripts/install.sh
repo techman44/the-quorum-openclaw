@@ -297,15 +297,19 @@ done
 
 success "Schema migrations applied."
 
-# ── 10. Install plugin into OpenClaw ─────────────────────────────────────
+# ── 10. Install and configure plugin in OpenClaw ─────────────────────────
 header "Installing plugin into OpenClaw"
+
+# Ensure systemd user bus is available (needed for openclaw commands)
+if [ -z "${DBUS_SESSION_BUS_ADDRESS:-}" ] && [ -S "${XDG_RUNTIME_DIR:-/run/user/$(id -u)}/bus" ]; then
+    export DBUS_SESSION_BUS_ADDRESS="unix:path=${XDG_RUNTIME_DIR:-/run/user/$(id -u)}/bus"
+fi
 
 cd "$PROJECT_DIR"
 info "Running: openclaw plugins install -l ."
 openclaw plugins install -l .
 success "Plugin installed into OpenClaw."
 
-# ── 11. Configure plugin ────────────────────────────────────────────────
 header "Configuring plugin"
 
 info "Setting plugin configuration in OpenClaw..."
@@ -318,7 +322,7 @@ openclaw plugins config the-quorum \
     --set ollama_host="$OLLAMA_HOST" \
     --set ollama_embed_model="$OLLAMA_EMBED_MODEL" \
     --set embedding_dim="$EMBEDDING_DIM"
-success "Plugin configured."
+success "Plugin configured with values from .env."
 
 # ── 12. Optional cron setup ─────────────────────────────────────────────
 header "Cron schedule"

@@ -10,7 +10,7 @@
       "db_host": { "type": "string", "default": "localhost" },
       "db_port": { "type": "number", "default": 5432 },
       "db_user": { "type": "string", "default": "quorum" },
-      "db_password": { "type": "string" },
+      "db_password": { "type": "string", "default": "changeme" },
       "db_name": { "type": "string", "default": "quorum" },
       "ollama_host": { "type": "string", "default": "http://localhost:11434" },
       "ollama_embed_model": { "type": "string", "default": "mxbai-embed-large" },
@@ -18,6 +18,6 @@
       "inbox_dir": { "type": "string", "default": "data/inbox" },
       "processed_dir": { "type": "string", "default": "data/processed" }
     },
-    "required": ["db_password"]
+    "required": []
   }
 }
