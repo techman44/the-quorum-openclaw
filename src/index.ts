@@ -238,6 +238,7 @@ export default function register(api: any): void {
   // ─── Register Background Service (Embedding Queue Processor) ─────────────
 
   api.registerService({
+    id: 'quorum-embedding-queue',
     name: 'quorum-embedding-queue',
     description: 'Processes pending embeddings for documents and events stored in The Quorum',
     intervalMs: 30_000, // Run every 30 seconds

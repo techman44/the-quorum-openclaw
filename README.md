@@ -76,17 +76,17 @@ Each agent run announces its findings via your configured channel (Telegram or W
 
 ## Configuration
 
-Plugin configuration is managed through OpenClaw. The install script handles this, but you can adjust settings manually:
+Plugin configuration is managed through the OpenClaw config system. The install script handles this automatically, but you can adjust settings manually:
 
 ```bash
-openclaw plugins config the-quorum --set db_host=localhost
-openclaw plugins config the-quorum --set db_port=5432
-openclaw plugins config the-quorum --set db_user=quorum
-openclaw plugins config the-quorum --set db_password=YOUR_PASSWORD
-openclaw plugins config the-quorum --set db_name=quorum
-openclaw plugins config the-quorum --set ollama_host=http://localhost:11434
-openclaw plugins config the-quorum --set ollama_embed_model=mxbai-embed-large
-openclaw plugins config the-quorum --set embedding_dim=1024
+# View current plugin config
+openclaw config get plugins.entries.the-quorum.config
+
+# Set all config at once (JSON)
+openclaw config set plugins.entries.the-quorum.config '{"db_host":"localhost","db_port":5432,"db_user":"quorum","db_password":"YOUR_PASSWORD","db_name":"quorum","ollama_host":"http://localhost:11434","ollama_embed_model":"mxbai-embed-large","embedding_dim":1024}'
+
+# After changing config, restart the gateway
+systemctl --user restart openclaw-gateway.service
 ```
 
 ## Managing Cron Jobs

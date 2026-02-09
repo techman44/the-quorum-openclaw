@@ -315,15 +315,11 @@ success "Plugin installed into OpenClaw."
 header "Configuring plugin"
 
 info "Setting plugin configuration in OpenClaw..."
-openclaw plugins config the-quorum \
-    --set db_host="$DB_HOST" \
-    --set db_port="$DB_PORT" \
-    --set db_user="$DB_USER" \
-    --set db_password="$DB_PASSWORD" \
-    --set db_name="$DB_NAME" \
-    --set ollama_host="$OLLAMA_HOST" \
-    --set ollama_embed_model="$OLLAMA_EMBED_MODEL" \
-    --set embedding_dim="$EMBEDDING_DIM"
+PLUGIN_CONFIG=$(cat <<CFGEOF
+{"db_host":"$DB_HOST","db_port":$DB_PORT,"db_user":"$DB_USER","db_password":"$DB_PASSWORD","db_name":"$DB_NAME","ollama_host":"$OLLAMA_HOST","ollama_embed_model":"$OLLAMA_EMBED_MODEL","embedding_dim":$EMBEDDING_DIM}
+CFGEOF
+)
+openclaw config set plugins.entries.the-quorum.config "$PLUGIN_CONFIG"
 success "Plugin configured with values from .env."
 
 # ── 12. Optional cron setup ─────────────────────────────────────────────
