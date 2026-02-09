@@ -17,11 +17,13 @@ function getPool(config: QuorumConfig): Pool {
       database: config.db_name,
       max: 10,
       idleTimeoutMillis: 30000,
-      connectionTimeoutMillis: 5000,
+      connectionTimeoutMillis: 10000,
+      // Retry stale/broken connections instead of failing immediately
+      allowExitOnIdle: false,
     });
 
     pool.on('error', (err) => {
-      console.error('[the-quorum] Unexpected pool error:', err.message);
+      console.error('[the-quorum] Pool error (will retry on next query):', err.message);
     });
   }
   return pool;
