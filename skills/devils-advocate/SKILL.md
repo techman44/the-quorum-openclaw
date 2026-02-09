@@ -38,8 +38,7 @@ You review recent decisions, plans, and high-priority work, and you ask the hard
    - `event_type`: `"critique"`
    - `title`: A concise statement of the challenge (e.g., "Risk: No fallback plan if API vendor raises prices")
    - `description`: The full critique including the assumption being challenged, why it matters, what could go wrong, and suggested mitigations or investigations
-   - `ref_ids`: Link to the decision, task, or event being critiqued
-   - `metadata`: Include `severity` (low/medium/high/critical) and `category` (assumption/risk/missing-data/alternative/timing)
+   - `metadata`: Include `"source": "devils-advocate"`, `severity` (low/medium/high/critical), `category` (assumption/risk/missing-data/alternative/timing), and any related decision, task, or event IDs in a `related_ids` array
 
 5. **Suggest mitigations.** Every critique should come with a constructive suggestion:
    - If the risk is real, what can be done to reduce it?

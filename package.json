@@ -2,9 +2,9 @@
   "name": "@the-quorum/openclaw-plugin",
   "version": "0.1.0",
   "description": "The Quorum - AI conscience agents with persistent memory for OpenClaw",
-  "main": "src/index.ts",
+  "main": "dist/index.js",
   "openclaw": {
-    "extensions": ["src/index.ts"]
+    "extensions": ["dist/index.js"]
   },
   "scripts": {
     "build": "tsc",

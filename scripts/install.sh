@@ -231,7 +231,7 @@ info "Waiting up to ${OLLAMA_MAX_WAIT}s for Ollama to respond..."
 
 OLLAMA_READY=false
 for i in $(seq 1 "$OLLAMA_MAX_WAIT"); do
-    if curl -s http://localhost:11434/api/tags >/dev/null 2>&1; then
+    if curl -s "http://localhost:${OLLAMA_PORT:-11434}/api/tags" >/dev/null 2>&1; then
         OLLAMA_READY=true
         break
     fi
@@ -350,7 +350,7 @@ else
 fi
 
 # Check Ollama
-if curl -s http://localhost:11434/api/tags >/dev/null 2>&1; then
+if curl -s "http://localhost:${OLLAMA_PORT:-11434}/api/tags" >/dev/null 2>&1; then
     success "Ollama is responding."
 else
     error "Ollama is NOT responding."

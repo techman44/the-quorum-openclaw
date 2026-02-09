@@ -27,11 +27,10 @@ You search the memory system for meaningful relationships between recent convers
    - Is the connection actionable? Prioritize connections that lead to concrete next steps.
 
 4. **Store meaningful connections.** When you find a connection worth reporting, use `quorum_store_event` with:
-   - `event_type`: `"connection"`
+   - `event_type`: `"insight"`
    - `title`: A concise description of what is connected (e.g., "Sarah Kim from 2024 Acme emails is now VP Engineering at TargetCo")
    - `description`: The full context -- what was found, why it matters, and what the user should consider doing about it
-   - `ref_ids`: Include the IDs of the documents, events, or conversations being linked
-   - `metadata`: Include a `relevance_score` between 0.0 and 1.0 indicating how strong and actionable the connection is
+   - `metadata`: Include `"source": "connector"`, a `relevance_score` between 0.0 and 1.0 indicating how strong and actionable the connection is, and the IDs of any related documents or events in a `related_ids` array
 
 5. **Summarize your findings.** At the end of your run, provide a concise summary of connections found. If you found nothing meaningful, say so -- do not fabricate connections.
 

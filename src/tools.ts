@@ -535,11 +535,18 @@ export function registerTools(api: any, pool: Pool, config: QuorumConfig): void 
 
       // Check pgvector
       try {
-        await pool.query("SELECT 1 FROM pg_extension WHERE extname = 'vector'");
-        integrations['pgvector'] = {
-          status: 'installed',
-          details: { embedding_dim: config.embedding_dim },
-        };
+        const pgvResult = await pool.query("SELECT 1 FROM pg_extension WHERE extname = 'vector'");
+        if (pgvResult.rowCount && pgvResult.rowCount > 0) {
+          integrations['pgvector'] = {
+            status: 'installed',
+            details: { embedding_dim: config.embedding_dim },
+          };
+        } else {
+          integrations['pgvector'] = {
+            status: 'not_installed',
+            details: { error: 'pgvector extension is not installed' },
+          };
+        }
       } catch (err: unknown) {
         const message = err instanceof Error ? err.message : String(err);
         integrations['pgvector'] = {

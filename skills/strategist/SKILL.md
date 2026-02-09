@@ -44,7 +44,7 @@ You are the agent that thinks in terms of days and weeks, not hours. You look at
      - **What needs attention**: Items that should be prioritized
      - **Strategic observations**: Bigger-picture patterns or shifts
    - `tags`: Include `["reflection", "daily"]` and any relevant project tags
-   - `source`: `"strategist"`
+   - `metadata`: `{ "source": "strategist" }`
 
 6. **Reprioritize tasks.** Based on your analysis, use task tools to:
    - Adjust priority levels on existing tasks that are misaligned with strategic goals

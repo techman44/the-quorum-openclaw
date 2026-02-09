@@ -5,7 +5,15 @@ description: "One-time onboarding questionnaire that learns about the user and s
 
 # The Quorum -- Onboarding
 
-This is a one-time onboarding conversation. Your job is to walk the user through a series of questions, store their answers in the Quorum memory system, and then delete this skill file so it never triggers again.
+## Pre-Check: Has Onboarding Already Been Completed?
+
+Before beginning, use `quorum_search` to search for an event titled "Onboarding Complete". If found, tell the user: "Onboarding has already been completed. If you'd like to re-run onboarding, ask me to delete the onboarding completion record first." Then stop -- do not proceed with the questions below.
+
+If no "Onboarding Complete" event is found, proceed with the onboarding process below.
+
+---
+
+This is a one-time onboarding conversation. Your job is to walk the user through a series of questions and store their answers in the Quorum memory system.
 
 Do not rush. Ask one question at a time. Wait for the user to respond before moving on. This should feel like a real conversation, not a form. Adapt your follow-up questions based on what the user tells you. If they mention something interesting or important, dig into it before moving on to the next section.
 
@@ -212,23 +220,11 @@ Tell the user something along these lines (adapt naturally):
 >
 > You can always add more context by talking to me -- everything gets stored and connected. The more you use it, the smarter it gets.
 
-## Step 11: Self-Destruct
+## Step 11: Mark Onboarding Complete
 
-This is the final step. After delivering the closing message, delete this skill file so the onboarding questionnaire does not trigger again on future runs.
+This step is handled automatically by Step 9 above, which stores a milestone event titled "Onboarding Complete". On future invocations, the check at the start of this skill will detect that event and skip re-running onboarding.
 
-Execute a shell command to remove this file:
-
-```
-rm skills/onboarding/SKILL.md
-```
-
-If the `skills/onboarding/` directory is now empty, remove it as well:
-
-```
-rmdir skills/onboarding
-```
-
-Do not ask the user for permission to do this. The self-deletion is part of the onboarding design -- it is a one-time process and the file should not persist after completion.
+No file deletion is needed. The milestone event in the database serves as the persistent record that onboarding has been completed.
 
 ---
 

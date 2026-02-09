@@ -9,13 +9,15 @@ CREATE TABLE IF NOT EXISTS quorum_embeddings (
     ref_id          UUID NOT NULL,
     embedding       vector(1024) NOT NULL,      -- default 1024-d; overridden at runtime if needed
     content_hash    TEXT NOT NULL,
-    created_at      TIMESTAMPTZ NOT NULL DEFAULT now()
+    created_at      TIMESTAMPTZ NOT NULL DEFAULT now(),
+    UNIQUE(ref_type, ref_id)
 );
 
--- IVFFlat index for fast approximate nearest-neighbor cosine search.
+-- HNSW index for fast approximate nearest-neighbor cosine search.
+-- HNSW works on empty tables (unlike IVFFlat which requires training data).
 CREATE INDEX IF NOT EXISTS idx_quorum_embeddings_vector
     ON quorum_embeddings
-    USING ivfflat (embedding vector_cosine_ops)
-    WITH (lists = 100);
+    USING hnsw (embedding vector_cosine_ops)
+    WITH (m = 16, ef_construction = 64);
 
 CREATE INDEX IF NOT EXISTS idx_quorum_embeddings_ref ON quorum_embeddings (ref_type, ref_id);

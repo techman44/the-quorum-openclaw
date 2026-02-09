@@ -107,7 +107,8 @@ export async function ensureSchema(pool: Pool, embeddingDim: number): Promise<vo
         ref_id UUID NOT NULL,
         embedding vector(${embeddingDim}) NOT NULL,
         content_hash TEXT NOT NULL,
-        created_at TIMESTAMPTZ NOT NULL DEFAULT now()
+        created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+        UNIQUE(ref_type, ref_id)
       )
     `);
 
@@ -138,8 +139,8 @@ export async function ensureSchema(pool: Pool, embeddingDim: number): Promise<vo
     `);
     await client.query(`
       CREATE INDEX IF NOT EXISTS idx_quorum_embeddings_vector
-      ON quorum_embeddings USING ivfflat (embedding vector_cosine_ops)
-      WITH (lists = 100)
+      ON quorum_embeddings USING hnsw (embedding vector_cosine_ops)
+      WITH (m = 16, ef_construction = 64)
     `);
   } finally {
     client.release();
@@ -519,36 +520,19 @@ export async function storeEmbedding(
 ): Promise<EmbeddingRecord> {
   const vecLiteral = `[${record.embedding.join(',')}]`;
 
-  // Upsert: replace embedding if ref already exists
+  // Upsert: insert or update embedding keyed on (ref_type, ref_id)
   const result = await pool.query<EmbeddingRecord>(
     `INSERT INTO quorum_embeddings (ref_type, ref_id, embedding, content_hash)
      VALUES ($1, $2, $3::vector, $4)
-     ON CONFLICT (id) DO NOTHING
+     ON CONFLICT (ref_type, ref_id) DO UPDATE SET
+       embedding = EXCLUDED.embedding,
+       content_hash = EXCLUDED.content_hash,
+       created_at = now()
      RETURNING id, ref_type, ref_id, content_hash, created_at`,
     [record.ref_type, record.ref_id, vecLiteral, record.content_hash]
   );
 
-  if (result.rows[0]) return result.rows[0];
-
-  // If there's already an embedding for this ref, update it
-  const upsert = await pool.query<EmbeddingRecord>(
-    `UPDATE quorum_embeddings
-     SET embedding = $3::vector, content_hash = $4, created_at = now()
-     WHERE ref_type = $1 AND ref_id = $2
-     RETURNING id, ref_type, ref_id, content_hash, created_at`,
-    [record.ref_type, record.ref_id, vecLiteral, record.content_hash]
-  );
-
-  if (upsert.rows[0]) return upsert.rows[0];
-
-  // Fallback: insert fresh (no existing record)
-  const fresh = await pool.query<EmbeddingRecord>(
-    `INSERT INTO quorum_embeddings (ref_type, ref_id, embedding, content_hash)
-     VALUES ($1, $2, $3::vector, $4)
-     RETURNING id, ref_type, ref_id, content_hash, created_at`,
-    [record.ref_type, record.ref_id, vecLiteral, record.content_hash]
-  );
-  return fresh.rows[0];
+  return result.rows[0];
 }
 
 export async function hasEmbedding(
