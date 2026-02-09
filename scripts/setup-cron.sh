@@ -90,8 +90,8 @@ if ! command -v openclaw &>/dev/null; then
   exit 1
 fi
 
-# ── Ensure DBUS session bus is available ───────────────────────────
-if [ -z "${DBUS_SESSION_BUS_ADDRESS:-}" ] && [ -S "${XDG_RUNTIME_DIR:-/run/user/$(id -u)}/bus" ]; then
+# ── Ensure DBUS session bus is available (Linux only) ─────────────
+if [[ "$(uname -s)" != "Darwin" ]] && [ -z "${DBUS_SESSION_BUS_ADDRESS:-}" ] && [ -S "${XDG_RUNTIME_DIR:-/run/user/$(id -u)}/bus" ]; then
     export DBUS_SESSION_BUS_ADDRESS="unix:path=${XDG_RUNTIME_DIR:-/run/user/$(id -u)}/bus"
 fi
 
@@ -108,7 +108,7 @@ fi
 
 # By default, agents announce through the OpenClaw session (--channel last).
 # Override with --channel and --to for external delivery (Telegram, WhatsApp, etc.)
-DELIVERY_FLAGS="--announce --best-effort-deliver"
+DELIVERY_FLAGS="--deliver --best-effort-deliver"
 if [[ -n "$CHANNEL" ]]; then
   DELIVERY_FLAGS="$DELIVERY_FLAGS --channel $CHANNEL"
 fi
