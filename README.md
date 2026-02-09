@@ -28,8 +28,9 @@ The install script will:
 6. Pull the `mxbai-embed-large` embedding model (~670MB on first run)
 7. Run database schema migrations
 8. Install and configure the plugin in OpenClaw
-9. Offer to set up cron jobs for the conscience agents
-10. Run a final health check to verify everything works
+9. Run a quick onboarding questionnaire to seed the agents with your context
+10. Offer to set up cron jobs for the conscience agents
+11. Run a final health check to verify everything works
 
 To manage the Docker services after installation:
 
@@ -69,7 +70,7 @@ Five agents run on scheduled intervals via OpenClaw cron jobs. Each has a distin
 | **The Data Collector** | Every 30 minutes | Scans the inbox directory for new files, ingests and indexes them automatically |
 
 **Onboarding**
-On first use, the system runs a one-time onboarding conversation that learns about you -- your background, goals, priorities, accountability preferences, and how you want the system to behave. You can optionally paste a LinkedIn URL or resume for instant career context. Everything gets stored in the database so the agents have real data to work with from day one. The onboarding checks for a completion milestone and won't re-trigger after it's done.
+During installation, a quick CLI questionnaire captures your basics -- name, role, projects, priorities, and how you want the agents to behave. This gets written to `data/inbox/` where the Data Collector ingests it into the memory system automatically. For a deeper interactive onboarding, you can run the `quorum-onboarding` skill through OpenClaw chat at any time.
 
 **3. Delivery (Notifications)**
 Each agent run announces its findings via your configured channel (Telegram or WhatsApp), so insights reach you without opening a terminal.

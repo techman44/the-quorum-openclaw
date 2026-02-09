@@ -351,22 +351,113 @@ else
     warn "Gateway service not running. Start it with: openclaw gateway install && openclaw daemon start"
 fi
 
-# ── 13. Onboarding reminder ──────────────────────────────────────────────
-header "Onboarding (next step)"
+# ── 13. Onboarding ───────────────────────────────────────────────────────
+header "Onboarding"
 
 echo ""
 echo "  The Quorum works best when the agents know about you."
-echo "  Before the cron agents start running, you should complete"
-echo "  the onboarding questionnaire through OpenClaw."
+echo "  Let's capture some basics so the agents have context from day one."
 echo ""
-echo "  To start onboarding, open your OpenClaw chat and say:"
-echo ""
-printf "    ${BOLD}Run the quorum-onboarding skill${NC}\n"
-echo ""
-echo "  It will walk you through an interactive conversation about"
-echo "  your background, goals, priorities, and preferences."
-echo "  Everything gets stored so the agents have context from day one."
-echo ""
+
+if prompt_yn "Run the quick onboarding questionnaire now?" "y"; then
+    echo ""
+
+    # ── Name ──
+    read -rp "$(printf "${BOLD}What's your name? ${NC}")" OB_NAME
+    OB_NAME="${OB_NAME:-User}"
+    echo ""
+
+    # ── Role ──
+    read -rp "$(printf "${BOLD}What do you do? (current role, company, freelancing, etc.) ${NC}")
+> " OB_ROLE
+    echo ""
+
+    # ── Projects ──
+    echo "What are the main projects or areas you're focused on right now?"
+    echo "(Work projects, side projects, personal goals -- list as many as you like.)"
+    read -rp "> " OB_PROJECTS
+    echo ""
+
+    # ── Priorities ──
+    echo "What are your top 3 priorities right now? The things that, if you made"
+    echo "real progress on them this month, you'd feel good about?"
+    read -rp "> " OB_PRIORITIES
+    echo ""
+
+    # ── Accountability depth ──
+    echo "How deeply should the agents analyse and push back?"
+    echo "  1) Light    -- Quick summaries, surface-level observations"
+    echo "  2) Standard -- Detailed reflections, proactive suggestions (recommended)"
+    echo "  3) Deep     -- Comprehensive analysis, thorough challenges"
+    read -rp "$(printf "${BOLD}Choose [1/2/3]: ${NC}")" OB_DEPTH_CHOICE
+    case "$OB_DEPTH_CHOICE" in
+        1) OB_DEPTH="light" ;;
+        3) OB_DEPTH="deep" ;;
+        *) OB_DEPTH="standard" ;;
+    esac
+    echo ""
+
+    # ── Communication style ──
+    echo "How direct should the agents be when calling out procrastination"
+    echo "or missed commitments?"
+    echo "  1) Gentle  -- Supportive nudges, encouraging tone"
+    echo "  2) Direct  -- Straightforward, no sugarcoating (recommended)"
+    echo "  3) Blunt   -- No-nonsense, call it like it is"
+    read -rp "$(printf "${BOLD}Choose [1/2/3]: ${NC}")" OB_STYLE_CHOICE
+    case "$OB_STYLE_CHOICE" in
+        1) OB_STYLE="gentle" ;;
+        3) OB_STYLE="blunt" ;;
+        *) OB_STYLE="direct" ;;
+    esac
+    echo ""
+
+    # ── Optional: LinkedIn / extra context ──
+    echo "Anything else the agents should know about you? (career background,"
+    echo "LinkedIn URL, goals, preferences -- or just press Enter to skip)"
+    read -rp "> " OB_EXTRA
+    echo ""
+
+    # ── Write onboarding file to inbox ──
+    INBOX_DIR="$PROJECT_DIR/data/inbox"
+    mkdir -p "$INBOX_DIR"
+
+    ONBOARDING_FILE="$INBOX_DIR/onboarding-profile.md"
+    cat > "$ONBOARDING_FILE" <<OBEOF
+# User Profile - Onboarding
+
+## About
+- **Name:** $OB_NAME
+- **Role:** $OB_ROLE
+
+## Current Projects and Focus Areas
+$OB_PROJECTS
+
+## Top Priorities
+$OB_PRIORITIES
+
+## System Preferences
+- **Analysis depth:** $OB_DEPTH
+- **Accountability style:** $OB_STYLE
+
+OBEOF
+
+    if [ -n "$OB_EXTRA" ]; then
+        cat >> "$ONBOARDING_FILE" <<OBEXTRA
+## Additional Context
+$OB_EXTRA
+
+OBEXTRA
+    fi
+
+    success "Onboarding profile saved to data/inbox/onboarding-profile.md"
+    info "The Data Collector will ingest this into the memory system on its next run."
+    info "You can also run a deeper interactive onboarding later through OpenClaw chat."
+    echo ""
+else
+    info "Skipping onboarding. You can run it later through OpenClaw chat:"
+    echo "  Open OpenClaw and say: Run the quorum-onboarding skill"
+    echo ""
+fi
 
 # ── 14. Optional cron setup ─────────────────────────────────────────────
 header "Cron schedule"
@@ -439,9 +530,6 @@ if [ "$HEALTH_OK" = true ]; then
     echo ""
     echo "List Quorum skills:"
     echo "  openclaw skills list | grep quorum"
-    echo ""
-    echo "Start onboarding (recommended first step):"
-    echo "  Open OpenClaw chat and say: Run the quorum-onboarding skill"
     echo ""
     echo "Manage Docker services:"
     echo "  cd $PROJECT_DIR && $COMPOSE_CMD ps"
