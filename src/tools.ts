@@ -13,11 +13,14 @@ try {
   } else if (typeof mod.default === 'function') {
     pdfParse = mod.default;
   } else if (typeof mod.PDFParse === 'function') {
-    // v2 style: exports a class - wrap it
+    // v2 style: exports a class that takes { data } in constructor
     const PDFParse = mod.PDFParse;
     pdfParse = async (buf: Buffer) => {
-      const parser = new PDFParse();
-      return parser.loadPDF(buf);
+      const parser = new PDFParse({ data: buf });
+      await parser.load();
+      const result = await parser.getText();
+      await parser.destroy();
+      return { text: result.text };
     };
   }
 } catch {
