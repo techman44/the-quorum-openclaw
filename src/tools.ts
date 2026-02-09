@@ -808,7 +808,9 @@ export function registerTools(api: any, pool: Pool, config: QuorumConfig): void 
           // Embed (best effort)
           let embeddingStatus = 'pending';
           try {
-            const textToEmbed = `${doc.title}\n\n${doc.content}`;
+            // Truncate to ~2000 chars to fit embedding model context window
+            const truncContent = doc.content.length > 2000 ? doc.content.slice(0, 2000) : doc.content;
+            const textToEmbed = `${doc.title}\n\n${truncContent}`;
             const result = await embedAndStore(pool, embedConfig, 'document', doc.id, textToEmbed);
             embeddingStatus = result.embedded ? 'stored' : 'already_current';
           } catch (embErr: unknown) {
