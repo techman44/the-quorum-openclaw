@@ -1,6 +1,6 @@
 -- Enable required PostgreSQL extensions.
 -- pgvector: vector similarity search for embeddings
--- uuid-ossp: UUID generation functions
+-- pgcrypto: gen_random_uuid() for UUID generation
 
 CREATE EXTENSION IF NOT EXISTS vector;
-CREATE EXTENSION IF NOT EXISTS "uuid-ossp";
+CREATE EXTENSION IF NOT EXISTS "pgcrypto";

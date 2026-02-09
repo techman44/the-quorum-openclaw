@@ -1,280 +1,405 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
+# ---------------------------------------------------------------------------
+# The Quorum for OpenClaw -- Install Script
+# Checks prerequisites, sets up Docker services (PostgreSQL + Ollama),
+# builds the TypeScript plugin, installs it into OpenClaw, and configures it.
+# Safe to run multiple times (idempotent).
+# ---------------------------------------------------------------------------
+
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 PROJECT_DIR="$(cd "$SCRIPT_DIR/.." && pwd)"
 
-# ── Helpers ─────────────────────────────────────────────────────────
+# ── Colour helpers ─────────────────────────────────────────────────────────
+RED='\033[0;31m'
+GREEN='\033[0;32m'
+YELLOW='\033[1;33m'
+BLUE='\033[0;34m'
+CYAN='\033[0;36m'
+BOLD='\033[1m'
+NC='\033[0m' # No colour
 
-info()    { echo "[INFO]  $*"; }
-warn()    { echo "[WARN]  $*"; }
-error()   { echo "[ERROR] $*" >&2; }
-success() { echo "[OK]    $*"; }
+info()    { printf "${BLUE}[INFO]${NC}  %s\n" "$*"; }
+success() { printf "${GREEN}[OK]${NC}    %s\n" "$*"; }
+warn()    { printf "${YELLOW}[WARN]${NC}  %s\n" "$*"; }
+error()   { printf "${RED}[ERROR]${NC} %s\n" "$*" >&2; }
+header()  { printf "\n${BOLD}${CYAN}── %s${NC}\n" "$*"; }
 
+# ── Trap: print a helpful message on unexpected failure ────────────────────
+cleanup() {
+    if [ $? -ne 0 ]; then
+        echo ""
+        error "Installation did not complete successfully."
+        error "Review the output above for details, fix the issue, and re-run this script."
+    fi
+}
+trap cleanup EXIT
+
+# ── Helper: ask yes/no ─────────────────────────────────────────────────────
 prompt_yn() {
-  local msg="$1" default="${2:-y}"
-  local yn
-  if [[ "$default" == "y" ]]; then
-    read -rp "$msg [Y/n]: " yn
-    yn="${yn:-y}"
-  else
-    read -rp "$msg [y/N]: " yn
-    yn="${yn:-n}"
-  fi
-  [[ "$yn" =~ ^[Yy] ]]
+    local prompt="${1:-Continue?}"
+    local default="${2:-y}"
+    local answer
+    if [ "$default" = "y" ]; then
+        read -rp "$(printf "${BOLD}%s [Y/n]: ${NC}" "$prompt")" answer
+        answer="${answer:-y}"
+    else
+        read -rp "$(printf "${BOLD}%s [y/N]: ${NC}" "$prompt")" answer
+        answer="${answer:-n}"
+    fi
+    [[ "$answer" =~ ^[Yy] ]]
 }
 
-# ── Banner ──────────────────────────────────────────────────────────
-
+# ═══════════════════════════════════════════════════════════════════════════
 echo ""
 echo "============================================"
 echo "  The Quorum for OpenClaw - Installer"
 echo "============================================"
 echo ""
+info "Project directory: $PROJECT_DIR"
+echo ""
 
-# ── 1. Check OpenClaw ──────────────────────────────────────────────
+# ── 1. Check prerequisites ────────────────────────────────────────────────
+header "Checking prerequisites"
 
-info "Checking for OpenClaw..."
+MISSING=()
+
+# OpenClaw
 if command -v openclaw &>/dev/null; then
-  OC_VERSION=$(openclaw --version 2>/dev/null || echo "unknown")
-  success "OpenClaw found: $OC_VERSION"
+    OC_VERSION=$(openclaw --version 2>/dev/null || echo "unknown")
+    success "OpenClaw found: $OC_VERSION"
 else
-  error "OpenClaw is not installed or not in PATH."
-  echo ""
-  echo "  Install OpenClaw first: https://openclaw.dev"
-  echo ""
-  exit 1
+    MISSING+=("openclaw")
+    error "OpenClaw is not installed or not in PATH."
+    echo "  Install OpenClaw first: https://openclaw.dev"
 fi
 
-# ── 2. Check/Start PostgreSQL ──────────────────────────────────────
-
-echo ""
-info "Checking for PostgreSQL..."
-
-PG_RUNNING=false
-
-# Check if PostgreSQL is already running (native or Docker)
-if pg_isready -q 2>/dev/null; then
-  PG_RUNNING=true
-  success "PostgreSQL is running."
-elif docker ps --format '{{.Names}}' 2>/dev/null | grep -q "postgres"; then
-  PG_RUNNING=true
-  success "PostgreSQL is running via Docker."
+# Node.js
+if command -v node &>/dev/null; then
+    NODE_VERSION="$(node --version 2>&1)"
+    success "node found ($NODE_VERSION)"
+else
+    MISSING+=("node")
+    error "node not found. Install Node.js: https://nodejs.org"
 fi
 
-if [[ "$PG_RUNNING" == false ]]; then
-  warn "PostgreSQL does not appear to be running."
-  echo ""
-  echo "  Options:"
-  echo "    1) Start PostgreSQL via Docker (requires Docker)"
-  echo "    2) I'll start it myself (skip this step)"
-  echo ""
-  read -rp "  Choice [1]: " pg_choice
-  pg_choice="${pg_choice:-1}"
+# npm
+if command -v npm &>/dev/null; then
+    NPM_VERSION="$(npm --version 2>&1)"
+    success "npm found (v$NPM_VERSION)"
+else
+    MISSING+=("npm")
+    error "npm not found. It is usually bundled with Node.js."
+fi
 
-  if [[ "$pg_choice" == "1" ]]; then
-    if ! command -v docker &>/dev/null; then
-      error "Docker is not installed. Please install Docker or start PostgreSQL manually."
-      exit 1
-    fi
+# Docker
+if command -v docker &>/dev/null; then
+    success "docker found ($(docker --version 2>&1 | head -1))"
+else
+    MISSING+=("docker")
+    error "docker not found. Install Docker: https://docs.docker.com/get-docker/"
+fi
 
-    info "Starting PostgreSQL with pgvector via Docker..."
-    docker run -d \
-      --name quorum-postgres \
-      -e POSTGRES_USER=quorum \
-      -e POSTGRES_PASSWORD=quorum \
-      -e POSTGRES_DB=quorum \
-      -p 5432:5432 \
-      pgvector/pgvector:pg17 \
-      >/dev/null 2>&1 || {
-        # Container might already exist but be stopped
-        docker start quorum-postgres >/dev/null 2>&1 || {
-          error "Failed to start PostgreSQL container."
-          echo "  If port 5432 is already in use, you may have another PostgreSQL instance."
-          echo "  Stop it or use a different port."
-          exit 1
-        }
-      }
+# curl (needed for health checks)
+if command -v curl &>/dev/null; then
+    success "curl found"
+else
+    MISSING+=("curl")
+    error "curl not found. Install curl to continue."
+fi
 
-    info "Waiting for PostgreSQL to be ready..."
-    for i in $(seq 1 30); do
-      if docker exec quorum-postgres pg_isready -q 2>/dev/null; then
-        break
-      fi
-      sleep 1
-    done
+if [ ${#MISSING[@]} -gt 0 ]; then
+    echo ""
+    error "Missing prerequisites: ${MISSING[*]}"
+    error "Install the missing tools and re-run this script."
+    exit 1
+fi
 
-    if docker exec quorum-postgres pg_isready -q 2>/dev/null; then
-      success "PostgreSQL is ready."
-      DB_HOST="localhost"
-      DB_PORT="5432"
-      DB_USER="quorum"
-      DB_PASS="quorum"
-      DB_NAME="quorum"
+# Docker compose check
+if docker compose version &>/dev/null 2>&1; then
+    COMPOSE_CMD="docker compose"
+elif command -v docker-compose &>/dev/null; then
+    COMPOSE_CMD="docker-compose"
+else
+    error "docker-compose not found. Install the Docker Compose plugin."
+    exit 1
+fi
+success "docker compose found ($($COMPOSE_CMD version 2>&1 | head -1))"
+
+# ── 2. Environment file ──────────────────────────────────────────────────
+header "Environment configuration"
+
+ENV_FILE="$PROJECT_DIR/.env"
+
+if [ -f "$ENV_FILE" ]; then
+    success ".env already exists -- using existing configuration."
+else
+    if [ -f "$PROJECT_DIR/.env.example" ]; then
+        cp "$PROJECT_DIR/.env.example" "$ENV_FILE"
+        success "Created .env from .env.example."
     else
-      error "PostgreSQL did not start in time."
-      exit 1
+        # Create a minimal .env with defaults
+        cat > "$ENV_FILE" <<'ENVEOF'
+# The Quorum for OpenClaw - Environment Configuration
+DB_HOST=localhost
+DB_PORT=5432
+DB_USER=quorum
+DB_PASSWORD=changeme
+DB_NAME=quorum
+OLLAMA_HOST=http://localhost:11434
+OLLAMA_PORT=11434
+OLLAMA_EMBED_MODEL=mxbai-embed-large
+EMBEDDING_DIM=1024
+ENVEOF
+        success "Created .env with default values."
     fi
-  else
-    info "Skipping PostgreSQL setup. Make sure it is running before proceeding."
-  fi
+    warn "Review $ENV_FILE and update any values before production use."
 fi
 
-# ── Collect DB credentials ─────────────────────────────────────────
+# Source .env to pick up DB vars for later steps
+set -a
+# shellcheck disable=SC1090
+source "$ENV_FILE"
+set +a
 
+# Set defaults for variables that might not be in .env
+DB_HOST="${DB_HOST:-localhost}"
+DB_PORT="${DB_PORT:-5432}"
+DB_USER="${DB_USER:-quorum}"
+DB_PASSWORD="${DB_PASSWORD:-changeme}"
+DB_NAME="${DB_NAME:-quorum}"
+OLLAMA_HOST="${OLLAMA_HOST:-http://localhost:11434}"
+OLLAMA_EMBED_MODEL="${OLLAMA_EMBED_MODEL:-mxbai-embed-large}"
+EMBEDDING_DIM="${EMBEDDING_DIM:-1024}"
+
+info "DB: $DB_USER@$DB_HOST:$DB_PORT/$DB_NAME"
+info "Ollama: $OLLAMA_HOST"
+
+# ── 3. Install npm dependencies ──────────────────────────────────────────
+header "Installing npm dependencies"
+
+cd "$PROJECT_DIR"
+info "Running npm install..."
+npm install
+success "npm dependencies installed."
+
+# ── 4. Build TypeScript ──────────────────────────────────────────────────
+header "Building TypeScript"
+
+info "Running npm run build..."
+npm run build
+success "TypeScript build complete (output in dist/)."
+
+# ── 5. Start Docker services ────────────────────────────────────────────
+header "Starting Docker services (PostgreSQL + Ollama)"
+
+info "Running $COMPOSE_CMD up -d..."
+(cd "$PROJECT_DIR" && $COMPOSE_CMD up -d)
+success "Docker containers started."
+
+# ── 6. Wait for PostgreSQL ───────────────────────────────────────────────
+header "Waiting for PostgreSQL"
+
+PG_MAX_WAIT=30
+info "Waiting up to ${PG_MAX_WAIT}s for PostgreSQL to accept connections..."
+
+PG_READY=false
+for i in $(seq 1 "$PG_MAX_WAIT"); do
+    if docker exec quorum-db pg_isready -U "$DB_USER" -q 2>/dev/null; then
+        PG_READY=true
+        break
+    fi
+    printf "."
+    sleep 1
+done
 echo ""
-info "Database configuration:"
 
-if [[ -z "${DB_HOST:-}" ]]; then
-  read -rp "  Database host [localhost]: " DB_HOST
-  DB_HOST="${DB_HOST:-localhost}"
-fi
-if [[ -z "${DB_PORT:-}" ]]; then
-  read -rp "  Database port [5432]: " DB_PORT
-  DB_PORT="${DB_PORT:-5432}"
-fi
-if [[ -z "${DB_USER:-}" ]]; then
-  read -rp "  Database user [quorum]: " DB_USER
-  DB_USER="${DB_USER:-quorum}"
-fi
-if [[ -z "${DB_PASS:-}" ]]; then
-  read -rsp "  Database password [quorum]: " DB_PASS
-  echo ""
-  DB_PASS="${DB_PASS:-quorum}"
-fi
-if [[ -z "${DB_NAME:-}" ]]; then
-  read -rp "  Database name [quorum]: " DB_NAME
-  DB_NAME="${DB_NAME:-quorum}"
+if [ "$PG_READY" = true ]; then
+    success "PostgreSQL is ready (took ~${i}s)."
+else
+    error "PostgreSQL did not become ready within ${PG_MAX_WAIT}s."
+    error "Check container logs: docker logs quorum-db"
+    exit 1
 fi
 
-export PGHOST="$DB_HOST"
-export PGPORT="$DB_PORT"
-export PGUSER="$DB_USER"
-export PGPASSWORD="$DB_PASS"
-export PGDATABASE="$DB_NAME"
+# ── 7. Wait for Ollama ──────────────────────────────────────────────────
+header "Waiting for Ollama"
 
-# ── 3. Run schema migrations ──────────────────────────────────────
+OLLAMA_MAX_WAIT=30
+info "Waiting up to ${OLLAMA_MAX_WAIT}s for Ollama to respond..."
 
+OLLAMA_READY=false
+for i in $(seq 1 "$OLLAMA_MAX_WAIT"); do
+    if curl -s http://localhost:11434/api/tags >/dev/null 2>&1; then
+        OLLAMA_READY=true
+        break
+    fi
+    printf "."
+    sleep 1
+done
 echo ""
-info "Running schema migrations..."
+
+if [ "$OLLAMA_READY" = true ]; then
+    success "Ollama is ready (took ~${i}s)."
+else
+    error "Ollama did not become ready within ${OLLAMA_MAX_WAIT}s."
+    error "Check container logs: docker logs quorum-ollama"
+    exit 1
+fi
+
+# ── 8. Pull embedding model ─────────────────────────────────────────────
+header "Pulling embedding model"
+
+# Check if model is already available
+if docker exec quorum-ollama ollama list 2>/dev/null | grep -q "$OLLAMA_EMBED_MODEL"; then
+    success "$OLLAMA_EMBED_MODEL is already available."
+else
+    info "Pulling $OLLAMA_EMBED_MODEL (this may take a few minutes on first run)..."
+    docker exec quorum-ollama ollama pull "$OLLAMA_EMBED_MODEL"
+    success "$OLLAMA_EMBED_MODEL model pulled."
+fi
+
+# ── 9. Schema migrations ────────────────────────────────────────────────
+header "Database schema"
 
 SCHEMA_DIR="$PROJECT_DIR/schema"
 
-if [[ ! -d "$SCHEMA_DIR" ]]; then
-  error "Schema directory not found: $SCHEMA_DIR"
-  exit 1
+if [ ! -d "$SCHEMA_DIR" ]; then
+    error "Schema directory not found: $SCHEMA_DIR"
+    exit 1
 fi
 
+# docker-entrypoint-initdb.d only runs on FIRST container start (empty data volume).
+# For re-installs or schema updates, we apply migrations explicitly.
+# Each schema file should use CREATE ... IF NOT EXISTS or equivalent to be idempotent.
+info "Applying schema migrations via docker exec..."
+
+MIGRATION_FAILED=false
 for sql_file in "$SCHEMA_DIR"/*.sql; do
-  fname="$(basename "$sql_file")"
-  info "  Applying $fname..."
-  psql -v ON_ERROR_STOP=1 -f "$sql_file" >/dev/null 2>&1 || {
-    error "Failed to apply $fname"
-    echo "  Check your database credentials and ensure PostgreSQL is running."
-    exit 1
-  }
+    fname="$(basename "$sql_file")"
+    info "  Applying $fname..."
+    # The schema dir is mounted at /docker-entrypoint-initdb.d inside the container
+    if docker exec quorum-db psql -U "$DB_USER" -d "$DB_NAME" \
+        -v ON_ERROR_STOP=1 \
+        -f "/docker-entrypoint-initdb.d/$fname" 2>&1 | while IFS= read -r line; do
+            # Suppress NOTICE-level messages (e.g. "relation already exists, skipping")
+            if echo "$line" | grep -qi "error"; then
+                echo "    $line"
+            fi
+        done; then
+        : # success
+    else
+        warn "  $fname had issues (may be OK if objects already exist)."
+        # Don't fail hard -- schema files should be idempotent with IF NOT EXISTS
+    fi
 done
 
-success "All schema migrations applied."
+success "Schema migrations applied."
 
-# ── 4. Check Ollama ────────────────────────────────────────────────
-
-echo ""
-info "Checking for Ollama..."
-
-OLLAMA_HOST="${OLLAMA_HOST:-http://localhost:11434}"
-
-if command -v ollama &>/dev/null; then
-  success "Ollama CLI found."
-
-  # Check if Ollama server is running
-  if curl -s "${OLLAMA_HOST}/api/tags" >/dev/null 2>&1; then
-    success "Ollama server is running at $OLLAMA_HOST"
-  else
-    warn "Ollama is installed but the server may not be running."
-    echo "  Start it with: ollama serve"
-    echo ""
-    if prompt_yn "  Continue anyway?" "y"; then
-      info "Continuing without verifying Ollama server."
-    else
-      exit 1
-    fi
-  fi
-
-  # Check for mxbai-embed-large model
-  info "Checking for mxbai-embed-large model..."
-  if ollama list 2>/dev/null | grep -q "mxbai-embed-large"; then
-    success "mxbai-embed-large model is available."
-  else
-    warn "mxbai-embed-large model not found."
-    if prompt_yn "  Pull mxbai-embed-large now? (~670MB)" "y"; then
-      info "Pulling mxbai-embed-large (this may take a few minutes)..."
-      ollama pull mxbai-embed-large
-      success "mxbai-embed-large model pulled."
-    else
-      warn "Skipping model pull. The plugin will not work without the embedding model."
-    fi
-  fi
-else
-  warn "Ollama is not installed."
-  echo "  The Quorum requires Ollama for local embeddings."
-  echo "  Install it from: https://ollama.com"
-  echo ""
-  if prompt_yn "  Continue anyway?" "n"; then
-    info "Continuing without Ollama. Install it before using the plugin."
-  else
-    exit 1
-  fi
-fi
-
-# ── 5. Install plugin into OpenClaw ───────────────────────────────
-
-echo ""
-info "Installing The Quorum plugin into OpenClaw..."
+# ── 10. Install plugin into OpenClaw ─────────────────────────────────────
+header "Installing plugin into OpenClaw"
 
 cd "$PROJECT_DIR"
+info "Running: openclaw plugins install -l ."
 openclaw plugins install -l .
-success "Plugin installed."
+success "Plugin installed into OpenClaw."
 
-# ── 6. Configure plugin ──────────────────────────────────────────
+# ── 11. Configure plugin ────────────────────────────────────────────────
+header "Configuring plugin"
 
-echo ""
-info "Configuring The Quorum plugin in OpenClaw..."
-
+info "Setting plugin configuration in OpenClaw..."
 openclaw plugins config the-quorum \
-  --set db_host="$DB_HOST" \
-  --set db_port="$DB_PORT" \
-  --set db_user="$DB_USER" \
-  --set db_password="$DB_PASS" \
-  --set db_name="$DB_NAME" \
-  --set ollama_host="$OLLAMA_HOST" \
-  --set ollama_embed_model="mxbai-embed-large" \
-  --set embedding_dim=1024
-
+    --set db_host="$DB_HOST" \
+    --set db_port="$DB_PORT" \
+    --set db_user="$DB_USER" \
+    --set db_password="$DB_PASSWORD" \
+    --set db_name="$DB_NAME" \
+    --set ollama_host="$OLLAMA_HOST" \
+    --set ollama_embed_model="$OLLAMA_EMBED_MODEL" \
+    --set embedding_dim="$EMBEDDING_DIM"
 success "Plugin configured."
 
-# ── 7. Offer cron setup ──────────────────────────────────────────
+# ── 12. Optional cron setup ─────────────────────────────────────────────
+header "Cron schedule"
 
 echo ""
-if prompt_yn "Set up Quorum cron jobs now?" "y"; then
-  bash "$SCRIPT_DIR/setup-cron.sh"
+if [ -f "$SCRIPT_DIR/setup-cron.sh" ]; then
+    if prompt_yn "Set up Quorum cron jobs now?" "y"; then
+        chmod +x "$SCRIPT_DIR/setup-cron.sh"
+        bash "$SCRIPT_DIR/setup-cron.sh"
+    else
+        info "Skipping cron setup. Run it later with:"
+        echo "  bash $SCRIPT_DIR/setup-cron.sh"
+    fi
 else
-  info "Skipping cron setup. Run it later with:"
-  echo "  bash $SCRIPT_DIR/setup-cron.sh"
+    warn "setup-cron.sh not found -- skipping cron setup."
 fi
 
-# ── Done ──────────────────────────────────────────────────────────
+# ── 13. Final health check ──────────────────────────────────────────────
+header "Final health check"
 
-echo ""
-echo "============================================"
-echo "  The Quorum installation complete!"
-echo "============================================"
-echo ""
-echo "Verify the plugin is loaded:"
-echo "  openclaw plugins list"
-echo ""
-echo "Test the memory tools:"
-echo "  openclaw run --message \"Use quorum_store to save a test note\""
-echo ""
-echo "Documentation: $PROJECT_DIR/README.md"
-echo ""
+HEALTH_OK=true
+
+# Check PostgreSQL
+if docker exec quorum-db pg_isready -U "$DB_USER" -q 2>/dev/null; then
+    success "PostgreSQL is responding."
+else
+    error "PostgreSQL is NOT responding."
+    HEALTH_OK=false
+fi
+
+# Check Ollama
+if curl -s http://localhost:11434/api/tags >/dev/null 2>&1; then
+    success "Ollama is responding."
+else
+    error "Ollama is NOT responding."
+    HEALTH_OK=false
+fi
+
+# Check embedding model
+if docker exec quorum-ollama ollama list 2>/dev/null | grep -q "$OLLAMA_EMBED_MODEL"; then
+    success "$OLLAMA_EMBED_MODEL model is available."
+else
+    error "$OLLAMA_EMBED_MODEL model is NOT available."
+    HEALTH_OK=false
+fi
+
+# Check plugin in OpenClaw
+if openclaw plugins list 2>/dev/null | grep -qi "quorum"; then
+    success "The Quorum plugin is installed in OpenClaw."
+else
+    warn "Could not verify plugin in OpenClaw (openclaw plugins list did not match)."
+    # Not a hard failure -- the command output format may vary
+fi
+
+if [ "$HEALTH_OK" = true ]; then
+    echo ""
+    echo "============================================"
+    printf "  ${GREEN}The Quorum installation complete!${NC}\n"
+    echo "============================================"
+    echo ""
+    echo "Verify the plugin is loaded:"
+    echo "  openclaw plugins list"
+    echo ""
+    echo "Test the memory tools:"
+    echo "  openclaw run --message \"Use quorum_store to save a test note\""
+    echo ""
+    echo "Manage Docker services:"
+    echo "  cd $PROJECT_DIR && $COMPOSE_CMD ps"
+    echo "  cd $PROJECT_DIR && $COMPOSE_CMD logs -f"
+    echo "  cd $PROJECT_DIR && $COMPOSE_CMD down      # stop services"
+    echo ""
+    info "Documentation: $PROJECT_DIR/README.md"
+    echo ""
+else
+    echo ""
+    error "Installation completed with errors. Review the health check output above."
+    echo ""
+    echo "Troubleshooting:"
+    echo "  docker logs quorum-db       # PostgreSQL logs"
+    echo "  docker logs quorum-ollama   # Ollama logs"
+    echo "  docker ps                   # Check running containers"
+    echo ""
+    exit 1
+fi

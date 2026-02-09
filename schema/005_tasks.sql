@@ -1,34 +1,25 @@
 -- Tasks: actionable items extracted or created by agents.
 -- Tracks status, priority, ownership, deadlines, and provenance.
 
-CREATE TABLE IF NOT EXISTS tasks (
+CREATE TABLE IF NOT EXISTS quorum_tasks (
     id              UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     title           TEXT NOT NULL,
-    description     TEXT DEFAULT '',
-    status          TEXT NOT NULL DEFAULT 'pending' CHECK (status IN (
-                        'pending', 'in_progress', 'done', 'cancelled', 'blocked'
-                    )),
-    priority        INT NOT NULL DEFAULT 3 CHECK (priority BETWEEN 1 AND 5),
-                                                -- 1 = critical, 5 = low
-    owner           TEXT,                       -- who is responsible
-    created_by      TEXT,                       -- which agent created this task
+    description     TEXT NOT NULL DEFAULT '',
+    status          TEXT NOT NULL DEFAULT 'open',
+    priority        TEXT NOT NULL DEFAULT 'medium',
+    owner           TEXT,
     due_at          TIMESTAMPTZ,
-    completed_at    TIMESTAMPTZ,
-    source_ref_id   UUID,                       -- optional link to originating doc/event
-    metadata        JSONB DEFAULT '{}',
-    created_at      TIMESTAMPTZ DEFAULT NOW(),
-    updated_at      TIMESTAMPTZ DEFAULT NOW()
+    metadata        JSONB NOT NULL DEFAULT '{}',
+    created_at      TIMESTAMPTZ NOT NULL DEFAULT now(),
+    updated_at      TIMESTAMPTZ NOT NULL DEFAULT now()
 );
 
-CREATE INDEX IF NOT EXISTS idx_tasks_status     ON tasks (status);
-CREATE INDEX IF NOT EXISTS idx_tasks_priority   ON tasks (priority);
-CREATE INDEX IF NOT EXISTS idx_tasks_owner      ON tasks (owner);
-CREATE INDEX IF NOT EXISTS idx_tasks_created_by ON tasks (created_by);
-CREATE INDEX IF NOT EXISTS idx_tasks_due_at     ON tasks (due_at);
-CREATE INDEX IF NOT EXISTS idx_tasks_created_at ON tasks (created_at);
+CREATE INDEX IF NOT EXISTS idx_quorum_tasks_status   ON quorum_tasks (status);
+CREATE INDEX IF NOT EXISTS idx_quorum_tasks_priority ON quorum_tasks (priority);
+CREATE INDEX IF NOT EXISTS idx_quorum_tasks_owner    ON quorum_tasks (owner);
 
 -- Auto-update updated_at on row modification.
-CREATE OR REPLACE FUNCTION update_tasks_updated_at()
+CREATE OR REPLACE FUNCTION update_quorum_tasks_updated_at()
 RETURNS TRIGGER AS $$
 BEGIN
     NEW.updated_at = NOW();
@@ -36,8 +27,8 @@ BEGIN
 END;
 $$ LANGUAGE plpgsql;
 
-DROP TRIGGER IF EXISTS trg_tasks_updated_at ON tasks;
-CREATE TRIGGER trg_tasks_updated_at
-    BEFORE UPDATE ON tasks
+DROP TRIGGER IF EXISTS trg_quorum_tasks_updated_at ON quorum_tasks;
+CREATE TRIGGER trg_quorum_tasks_updated_at
+    BEFORE UPDATE ON quorum_tasks
     FOR EACH ROW
-    EXECUTE FUNCTION update_tasks_updated_at();
+    EXECUTE FUNCTION update_quorum_tasks_updated_at();
