@@ -1,0 +1,25 @@
+{
+  "name": "@the-quorum/openclaw-plugin",
+  "version": "0.1.0",
+  "description": "The Quorum - AI conscience agents with persistent memory for OpenClaw",
+  "main": "src/index.ts",
+  "openclaw": {
+    "extensions": ["src/index.ts"]
+  },
+  "scripts": {
+    "build": "tsc",
+    "lint": "eslint src/"
+  },
+  "dependencies": {
+    "pg": "^8.13.0"
+  },
+  "devDependencies": {
+    "typescript": "^5.5.0",
+    "@types/pg": "^8.11.0"
+  },
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/techman44/the-quorum-openclaw"
+  }
+}

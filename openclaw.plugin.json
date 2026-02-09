@@ -1,0 +1,21 @@
+{
+  "id": "the-quorum",
+  "name": "The Quorum",
+  "description": "AI conscience agents with persistent memory. Gives your agent long-term memory, self-awareness, and accountability.",
+  "version": "0.1.0",
+  "homepage": "https://github.com/techman44/the-quorum-openclaw",
+  "configSchema": {
+    "type": "object",
+    "properties": {
+      "db_host": { "type": "string", "default": "localhost" },
+      "db_port": { "type": "number", "default": 5432 },
+      "db_user": { "type": "string", "default": "quorum" },
+      "db_password": { "type": "string" },
+      "db_name": { "type": "string", "default": "quorum" },
+      "ollama_host": { "type": "string", "default": "http://localhost:11434" },
+      "ollama_embed_model": { "type": "string", "default": "mxbai-embed-large" },
+      "embedding_dim": { "type": "number", "default": 1024 }
+    },
+    "required": ["db_password"]
+  }
+}
