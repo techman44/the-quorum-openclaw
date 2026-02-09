@@ -61,6 +61,7 @@ export function registerTools(api: any, pool: Pool, config: QuorumConfig): void 
         },
       },
       required: ['query'],
+      additionalProperties: false,
     },
     handler: async (input: { query: string; ref_type?: string; limit?: number }) => {
       const limit = input.limit ?? 10;
@@ -170,6 +171,7 @@ export function registerTools(api: any, pool: Pool, config: QuorumConfig): void 
         metadata: {
           type: 'object',
           description: 'Optional key-value metadata to attach',
+          additionalProperties: true,
         },
         tags: {
           type: 'array',
@@ -178,6 +180,7 @@ export function registerTools(api: any, pool: Pool, config: QuorumConfig): void 
         },
       },
       required: ['doc_type', 'title', 'content'],
+      additionalProperties: false,
     },
     handler: async (input: {
       doc_type: string;
@@ -242,9 +245,11 @@ export function registerTools(api: any, pool: Pool, config: QuorumConfig): void 
         metadata: {
           type: 'object',
           description: 'Optional structured metadata to attach',
+          additionalProperties: true,
         },
       },
       required: ['event_type', 'title'],
+      additionalProperties: false,
     },
     handler: async (input: {
       event_type: string;
@@ -323,9 +328,11 @@ export function registerTools(api: any, pool: Pool, config: QuorumConfig): void 
         metadata: {
           type: 'object',
           description: 'Optional structured metadata',
+          additionalProperties: true,
         },
       },
       required: ['title'],
+      additionalProperties: false,
     },
     handler: async (input: {
       id?: string;
@@ -405,6 +412,7 @@ export function registerTools(api: any, pool: Pool, config: QuorumConfig): void 
           description: 'Maximum number of tasks to return. Defaults to 50.',
         },
       },
+      additionalProperties: false,
     },
     handler: async (input: {
       status?: string;
@@ -460,6 +468,7 @@ export function registerTools(api: any, pool: Pool, config: QuorumConfig): void 
         },
       },
       required: ['text'],
+      additionalProperties: false,
     },
     handler: async (input: { text: string; ref_type?: string; ref_id?: string }) => {
       const embedding = await embedText(input.text, embedConfig);
@@ -499,6 +508,7 @@ export function registerTools(api: any, pool: Pool, config: QuorumConfig): void 
     inputSchema: {
       type: 'object',
       properties: {},
+      additionalProperties: false,
     },
     handler: async () => {
       const integrations: Record<
@@ -602,6 +612,7 @@ export function registerTools(api: any, pool: Pool, config: QuorumConfig): void 
             'If true, list the files that would be ingested without actually processing them. Defaults to false.',
         },
       },
+      additionalProperties: false,
     },
     handler: async (input: { inbox_path?: string; dry_run?: boolean }) => {
       const inboxDir = input.inbox_path ?? config.inbox_dir;

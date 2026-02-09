@@ -104,7 +104,7 @@ fi
 
 # By default, agents announce through the OpenClaw session (--channel last).
 # Override with --channel and --to for external delivery (Telegram, WhatsApp, etc.)
-DELIVERY_FLAGS="--announce"
+DELIVERY_FLAGS="--announce --best-effort-deliver"
 if [[ -n "$CHANNEL" ]]; then
   DELIVERY_FLAGS="$DELIVERY_FLAGS --channel $CHANNEL"
 fi
