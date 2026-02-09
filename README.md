@@ -12,7 +12,7 @@ PostgreSQL, pgvector, Ollama, and the embedding model are all handled automatica
 
 ## GPU Acceleration (Recommended)
 
-Ollama uses the `mxbai-embed-large` model to generate vector embeddings for semantic search. This works on **both CPU and GPU** -- no GPU is required to run The Quorum.
+Ollama uses the `mxbai-embed-large` model to generate vector embeddings for semantic search. This works on **both CPU and GPU** -- GPU isn't required to run The Quorum.
 
 - **CPU**: Works out of the box, no extra setup. Embedding requests take ~500ms+ each. Fine for small document sets or occasional use.
 - **GPU (NVIDIA)**: Recommended for bulk ingestion. Embedding requests drop to ~60-90ms each. When processing hundreds of document chunks, the difference is significant.
