@@ -82,194 +82,156 @@ export default function register(api: any): void {
 
   // ─── Register CLI Commands ───────────────────────────────────────────────
 
-  try {
-  api.registerCommand({
-    name: 'quorum',
-    description: 'The Quorum memory management commands',
-    subcommands: {
-      status: {
-        description: 'Show Quorum system status and statistics',
-        handler: async () => {
-          try {
-            const stats = await getStats(db);
-            const ollamaHealth = await checkOllamaHealth(embedConfig);
+  // Register each subcommand as a separate command (OpenClaw expects flat commands with handler functions)
+  const commands = [
+    {
+      name: 'quorum-status',
+      description: 'Show Quorum system status and statistics',
+      handler: async () => {
+        try {
+          const stats = await getStats(db);
+          const ollamaHealth = await checkOllamaHealth(embedConfig);
 
-            const lines = [
-              '=== The Quorum - Status ===',
-              '',
-              `Database:    ${config.db_host}:${config.db_port}/${config.db_name}`,
-              `Ollama:      ${config.ollama_host} (model: ${config.ollama_embed_model})`,
-              `  Reachable: ${ollamaHealth.reachable ? 'yes' : 'no'}`,
-              `  Model OK:  ${ollamaHealth.model_available ? 'yes' : 'no'}`,
-              ollamaHealth.error ? `  Error:     ${ollamaHealth.error}` : null,
-              '',
-              '--- Memory Stats ---',
-              `Documents:     ${stats.documents}`,
-              `Events:        ${stats.events}`,
-              `Tasks:         ${stats.tasks}`,
-              `Embeddings:    ${stats.embeddings}`,
-              `Unembedded:    ${stats.unembedded_documents} docs, ${stats.unembedded_events} events`,
-            ];
+          const lines = [
+            '=== The Quorum - Status ===',
+            '',
+            `Database:    ${config.db_host}:${config.db_port}/${config.db_name}`,
+            `Ollama:      ${config.ollama_host} (model: ${config.ollama_embed_model})`,
+            `  Reachable: ${ollamaHealth.reachable ? 'yes' : 'no'}`,
+            `  Model OK:  ${ollamaHealth.model_available ? 'yes' : 'no'}`,
+            ollamaHealth.error ? `  Error:     ${ollamaHealth.error}` : null,
+            '',
+            '--- Memory Stats ---',
+            `Documents:     ${stats.documents}`,
+            `Events:        ${stats.events}`,
+            `Tasks:         ${stats.tasks}`,
+            `Embeddings:    ${stats.embeddings}`,
+            `Unembedded:    ${stats.unembedded_documents} docs, ${stats.unembedded_events} events`,
+          ];
 
-            console.log(lines.filter((l) => l !== null).join('\n'));
-          } catch (err: unknown) {
-            const message = err instanceof Error ? err.message : String(err);
-            console.error(`Error: ${message}`);
-            console.error('Is the database running and configured correctly?');
-          }
-        },
-      },
-
-      search: {
-        description: 'Search the Quorum memory database',
-        args: [
-          {
-            name: 'query',
-            description: 'Search query text',
-            required: true,
-          },
-          {
-            name: '--limit',
-            description: 'Max results (default: 10)',
-            required: false,
-          },
-          {
-            name: '--type',
-            description: 'Filter by ref type: document, event, or all',
-            required: false,
-          },
-        ],
-        handler: async (args: { query: string; limit?: string; type?: string }) => {
-          try {
-            const { embedText } = await import('./embeddings.js');
-            const { semanticSearch, semanticSearchEvents, searchDocumentsByText } = await import('./db.js');
-
-            const limit = args.limit ? parseInt(args.limit, 10) : 10;
-            const refType = args.type ?? 'all';
-
-            let usedSemantic = false;
-            const results: Array<{
-              id: string;
-              type: string;
-              title: string;
-              score: number | null;
-              preview: string;
-            }> = [];
-
-            try {
-              const queryEmbedding = await embedText(args.query, embedConfig);
-              usedSemantic = true;
-
-              if (refType === 'all' || refType === 'document') {
-                const docs = await semanticSearch(db, queryEmbedding, { limit });
-                for (const d of docs) {
-                  results.push({
-                    id: d.id,
-                    type: d.doc_type,
-                    title: d.title,
-                    score: Number(d.score),
-                    preview: d.content.slice(0, 120),
-                  });
-                }
-              }
-
-              if (refType === 'all' || refType === 'event') {
-                const events = await semanticSearchEvents(db, queryEmbedding, { limit });
-                for (const e of events) {
-                  results.push({
-                    id: e.id,
-                    type: e.event_type,
-                    title: e.title,
-                    score: Number(e.score),
-                    preview: e.description.slice(0, 120),
-                  });
-                }
-              }
-
-              results.sort((a, b) => (b.score ?? 0) - (a.score ?? 0));
-            } catch {
-              // Fallback to text search
-              const docs = await searchDocumentsByText(db, args.query, { limit });
-              for (const d of docs) {
-                results.push({
-                  id: d.id,
-                  type: d.doc_type,
-                  title: d.title,
-                  score: null,
-                  preview: d.content.slice(0, 120),
-                });
-              }
-            }
-
-            if (results.length === 0) {
-              console.log('No results found.');
-              return;
-            }
-
-            console.log(`Search results (${usedSemantic ? 'semantic' : 'text'}):\n`);
-            for (const r of results.slice(0, limit)) {
-              const scoreStr = r.score !== null ? ` (score: ${r.score.toFixed(4)})` : '';
-              console.log(`  [${r.type}] ${r.title}${scoreStr}`);
-              console.log(`    ID: ${r.id}`);
-              console.log(`    ${r.preview}...`);
-              console.log('');
-            }
-          } catch (err: unknown) {
-            const message = err instanceof Error ? err.message : String(err);
-            console.error(`Search error: ${message}`);
-          }
-        },
-      },
-
-      setup: {
-        description: 'Initialize or migrate the Quorum database schema',
-        handler: async () => {
-          try {
-            console.log(`Connecting to ${config.db_host}:${config.db_port}/${config.db_name}...`);
-            await ensureSchema(db, config.embedding_dim);
-            console.log('Schema created/verified successfully.');
-
-            const ollamaHealth = await checkOllamaHealth(embedConfig);
-            if (ollamaHealth.reachable) {
-              console.log(`Ollama is reachable at ${config.ollama_host}.`);
-              if (ollamaHealth.model_available) {
-                console.log(`Embedding model "${config.ollama_embed_model}" is available.`);
-              } else {
-                console.log(
-                  `WARNING: Model "${config.ollama_embed_model}" not found. ` +
-                    `Run: ollama pull ${config.ollama_embed_model}`
-                );
-              }
-            } else {
-              console.log(
-                `WARNING: Ollama not reachable at ${config.ollama_host}. ` +
-                  'Embeddings will not work until Ollama is running.'
-              );
-            }
-
-            console.log('\nThe Quorum is ready.');
-          } catch (err: unknown) {
-            const message = err instanceof Error ? err.message : String(err);
-            console.error(`Setup failed: ${message}`);
-          }
-        },
+          console.log(lines.filter((l) => l !== null).join('\n'));
+        } catch (err: unknown) {
+          const message = err instanceof Error ? err.message : String(err);
+          console.error(`Error: ${message}`);
+          console.error('Is the database running and configured correctly?');
+        }
       },
     },
-  });
-  } catch (err: unknown) {
-    const message = err instanceof Error ? err.message : String(err);
-    console.warn(`[the-quorum] Command registration skipped: ${message}`);
+    {
+      name: 'quorum-search',
+      description: 'Search the Quorum memory database',
+      args: [
+        { name: 'query', description: 'Search query text', required: true },
+        { name: '--limit', description: 'Max results (default: 10)', required: false },
+        { name: '--type', description: 'Filter by ref type: document, event, or all', required: false },
+      ],
+      handler: async (args: { query: string; limit?: string; type?: string }) => {
+        try {
+          const { embedText } = await import('./embeddings.js');
+          const { semanticSearch, semanticSearchEvents, searchDocumentsByText } = await import('./db.js');
+
+          const limit = args.limit ? parseInt(args.limit, 10) : 10;
+          const refType = args.type ?? 'all';
+
+          let usedSemantic = false;
+          const results: Array<{ id: string; type: string; title: string; score: number | null; preview: string }> = [];
+
+          try {
+            const queryEmbedding = await embedText(args.query, embedConfig);
+            usedSemantic = true;
+
+            if (refType === 'all' || refType === 'document') {
+              const docs = await semanticSearch(db, queryEmbedding, { limit });
+              for (const d of docs) {
+                results.push({ id: d.id, type: d.doc_type, title: d.title, score: Number(d.score), preview: d.content.slice(0, 120) });
+              }
+            }
+
+            if (refType === 'all' || refType === 'event') {
+              const events = await semanticSearchEvents(db, queryEmbedding, { limit });
+              for (const e of events) {
+                results.push({ id: e.id, type: e.event_type, title: e.title, score: Number(e.score), preview: e.description.slice(0, 120) });
+              }
+            }
+
+            results.sort((a, b) => (b.score ?? 0) - (a.score ?? 0));
+          } catch {
+            const docs = await searchDocumentsByText(db, args.query, { limit });
+            for (const d of docs) {
+              results.push({ id: d.id, type: d.doc_type, title: d.title, score: null, preview: d.content.slice(0, 120) });
+            }
+          }
+
+          if (results.length === 0) {
+            console.log('No results found.');
+            return;
+          }
+
+          console.log(`Search results (${usedSemantic ? 'semantic' : 'text'}):\n`);
+          for (const r of results.slice(0, limit)) {
+            const scoreStr = r.score !== null ? ` (score: ${r.score.toFixed(4)})` : '';
+            console.log(`  [${r.type}] ${r.title}${scoreStr}`);
+            console.log(`    ID: ${r.id}`);
+            console.log(`    ${r.preview}...`);
+            console.log('');
+          }
+        } catch (err: unknown) {
+          const message = err instanceof Error ? err.message : String(err);
+          console.error(`Search error: ${message}`);
+        }
+      },
+    },
+    {
+      name: 'quorum-setup',
+      description: 'Initialize or migrate the Quorum database schema',
+      handler: async () => {
+        try {
+          console.log(`Connecting to ${config.db_host}:${config.db_port}/${config.db_name}...`);
+          await ensureSchema(db, config.embedding_dim);
+          console.log('Schema created/verified successfully.');
+
+          const ollamaHealth = await checkOllamaHealth(embedConfig);
+          if (ollamaHealth.reachable) {
+            console.log(`Ollama is reachable at ${config.ollama_host}.`);
+            if (ollamaHealth.model_available) {
+              console.log(`Embedding model "${config.ollama_embed_model}" is available.`);
+            } else {
+              console.log(
+                `WARNING: Model "${config.ollama_embed_model}" not found. ` +
+                  `Run: ollama pull ${config.ollama_embed_model}`
+              );
+            }
+          } else {
+            console.log(
+              `WARNING: Ollama not reachable at ${config.ollama_host}. ` +
+                'Embeddings will not work until Ollama is running.'
+            );
+          }
+
+          console.log('\nThe Quorum is ready.');
+        } catch (err: unknown) {
+          const message = err instanceof Error ? err.message : String(err);
+          console.error(`Setup failed: ${message}`);
+        }
+      },
+    },
+  ];
+
+  for (const cmd of commands) {
+    try {
+      api.registerCommand(cmd);
+    } catch (err: unknown) {
+      const message = err instanceof Error ? err.message : String(err);
+      console.warn(`[the-quorum] Command '${cmd.name}' registration skipped: ${message}`);
+    }
   }
 
   // ─── Register Background Service (Embedding Queue Processor) ─────────────
 
   try {
-  api.registerService({
-    id: 'quorum-embedding-queue',
-    name: 'quorum-embedding-queue',
-    description: 'Processes pending embeddings for documents and events stored in The Quorum',
-    intervalMs: 30_000, // Run every 30 seconds
-    handler: async () => {
+    let embeddingInterval: ReturnType<typeof setInterval> | null = null;
+
+    const embeddingHandler = async () => {
       try {
         const result = await processEmbeddingQueue(db, embedConfig, 50);
         if (result.processed > 0 || result.errors > 0) {
@@ -281,8 +243,26 @@ export default function register(api: any): void {
         const message = err instanceof Error ? err.message : String(err);
         console.error(`[the-quorum] Embedding queue error: ${message}`);
       }
-    },
-  });
+    };
+
+    api.registerService({
+      id: 'quorum-embedding-queue',
+      name: 'quorum-embedding-queue',
+      description: 'Processes pending embeddings for documents and events stored in The Quorum',
+      intervalMs: 30_000,
+      handler: embeddingHandler,
+      start: async () => {
+        embeddingInterval = setInterval(embeddingHandler, 30_000);
+        // Run once immediately on start
+        await embeddingHandler();
+      },
+      stop: async () => {
+        if (embeddingInterval) {
+          clearInterval(embeddingInterval);
+          embeddingInterval = null;
+        }
+      },
+    });
   } catch (err: unknown) {
     const message = err instanceof Error ? err.message : String(err);
     console.warn(`[the-quorum] Service registration skipped: ${message}`);
