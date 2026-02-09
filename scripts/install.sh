@@ -411,9 +411,42 @@ if prompt_yn "Run the quick onboarding questionnaire now?" "y"; then
     esac
     echo ""
 
-    # ── Optional: LinkedIn / extra context ──
-    echo "Anything else the agents should know about you? (career background,"
-    echo "LinkedIn URL, goals, preferences -- or just press Enter to skip)"
+    # ── LinkedIn or resume ──
+    echo "Do you have a LinkedIn profile URL or resume you can share?"
+    echo "This gives the agents instant career context -- your history,"
+    echo "skills, roles, and companies."
+    echo ""
+    echo "  1) Paste a LinkedIn URL"
+    echo "  2) Paste resume text"
+    echo "  3) Skip for now"
+    read -rp "$(printf "${BOLD}Choose [1/2/3]: ${NC}")" OB_RESUME_CHOICE
+    OB_LINKEDIN=""
+    OB_RESUME=""
+    case "$OB_RESUME_CHOICE" in
+        1)
+            read -rp "$(printf "${BOLD}LinkedIn URL: ${NC}")" OB_LINKEDIN
+            echo ""
+            ;;
+        2)
+            echo ""
+            echo "Paste your resume text below. When done, press Enter on an"
+            echo "empty line, then type END and press Enter."
+            OB_RESUME=""
+            while IFS= read -r line; do
+                [ "$line" = "END" ] && break
+                OB_RESUME="${OB_RESUME}${line}
+"
+            done
+            echo ""
+            ;;
+        *)
+            echo ""
+            ;;
+    esac
+
+    # ── Optional: extra context ──
+    echo "Anything else the agents should know about you?"
+    echo "(Goals, preferences, things to track -- or press Enter to skip)"
     read -rp "> " OB_EXTRA
     echo ""
 
@@ -440,6 +473,22 @@ $OB_PRIORITIES
 - **Accountability style:** $OB_STYLE
 
 OBEOF
+
+    if [ -n "$OB_LINKEDIN" ]; then
+        cat >> "$ONBOARDING_FILE" <<OBLINKEDIN
+## LinkedIn Profile
+$OB_LINKEDIN
+
+OBLINKEDIN
+    fi
+
+    if [ -n "$OB_RESUME" ]; then
+        cat >> "$ONBOARDING_FILE" <<OBRESUME
+## Resume
+$OB_RESUME
+
+OBRESUME
+    fi
 
     if [ -n "$OB_EXTRA" ]; then
         cat >> "$ONBOARDING_FILE" <<OBEXTRA
