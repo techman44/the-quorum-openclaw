@@ -51,15 +51,16 @@ function buildConfig(apiConfig: Record<string, unknown> | undefined, pluginDir: 
     console.log(`[the-quorum] pluginDir was "${pluginDir}", using fallback base: ${base}`);
   }
 
+  // Priority: plugin config (openclaw config set) > environment variables (.env) > hardcoded defaults
   return {
-    db_host: (apiConfig?.db_host as string) ?? 'localhost',
-    db_port: (apiConfig?.db_port as number) ?? 5432,
-    db_user: (apiConfig?.db_user as string) ?? 'quorum',
-    db_password: (apiConfig?.db_password as string) ?? '',
-    db_name: (apiConfig?.db_name as string) ?? 'quorum',
-    ollama_host: (apiConfig?.ollama_host as string) ?? 'http://localhost:11434',
-    ollama_embed_model: (apiConfig?.ollama_embed_model as string) ?? 'mxbai-embed-large',
-    embedding_dim: (apiConfig?.embedding_dim as number) ?? 1024,
+    db_host: (apiConfig?.db_host as string) ?? process.env.DB_HOST ?? 'localhost',
+    db_port: (apiConfig?.db_port as number) ?? (Number(process.env.DB_PORT) || 5432),
+    db_user: (apiConfig?.db_user as string) ?? process.env.DB_USER ?? 'quorum',
+    db_password: (apiConfig?.db_password as string) ?? process.env.DB_PASSWORD ?? '',
+    db_name: (apiConfig?.db_name as string) ?? process.env.DB_NAME ?? 'quorum',
+    ollama_host: (apiConfig?.ollama_host as string) ?? process.env.OLLAMA_HOST ?? 'http://localhost:11434',
+    ollama_embed_model: (apiConfig?.ollama_embed_model as string) ?? process.env.OLLAMA_EMBED_MODEL ?? 'mxbai-embed-large',
+    embedding_dim: (apiConfig?.embedding_dim as number) ?? (Number(process.env.EMBEDDING_DIM) || 1024),
     inbox_dir: resolvePath(base, inboxRaw),
     processed_dir: resolvePath(base, processedRaw),
   };
