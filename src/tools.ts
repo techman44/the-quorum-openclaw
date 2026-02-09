@@ -28,7 +28,22 @@ export interface QuorumConfig {
 }
 
 /**
+ * Format a result payload in the OpenClaw tool result format.
+ */
+function jsonResult(payload: unknown) {
+  return {
+    content: [{ type: 'text' as const, text: JSON.stringify(payload, null, 2) }],
+  };
+}
+
+/**
  * Register all Quorum agent tools with the OpenClaw API.
+ *
+ * OpenClaw tools require:
+ *   - name: string
+ *   - description: string
+ *   - parameters: JSON Schema object (NOT inputSchema)
+ *   - execute(toolCallId, params, signal?, onUpdate?): returns { content: [{ type: "text", text: "..." }] }
  */
 export function registerTools(api: any, pool: Pool, config: QuorumConfig): void {
   const embedConfig: EmbeddingConfig = {
@@ -43,7 +58,7 @@ export function registerTools(api: any, pool: Pool, config: QuorumConfig): void 
     name: 'quorum_search',
     description:
       'Semantic search over The Quorum memory database. Searches documents and events using vector similarity. Falls back to text search if embeddings are unavailable.',
-    inputSchema: {
+    parameters: {
       type: 'object',
       properties: {
         query: {
@@ -63,7 +78,11 @@ export function registerTools(api: any, pool: Pool, config: QuorumConfig): void 
       required: ['query'],
       additionalProperties: false,
     },
-    handler: async (input: { query: string; ref_type?: string; limit?: number }) => {
+    execute: async (
+      _toolCallId: string,
+      input: { query: string; ref_type?: string; limit?: number },
+      _signal?: AbortSignal,
+    ) => {
       const limit = input.limit ?? 10;
       const refType = input.ref_type ?? 'all';
 
@@ -115,11 +134,11 @@ export function registerTools(api: any, pool: Pool, config: QuorumConfig): void 
         results.sort((a, b) => b.score - a.score);
         const trimmed = results.slice(0, limit);
 
-        return {
+        return jsonResult({
           search_type: 'semantic',
           result_count: trimmed.length,
           results: trimmed,
-        };
+        });
       } catch (err: unknown) {
         // Fallback to text search if embedding fails
         const message = err instanceof Error ? err.message : String(err);
@@ -130,7 +149,7 @@ export function registerTools(api: any, pool: Pool, config: QuorumConfig): void 
           limit,
         });
 
-        return {
+        return jsonResult({
           search_type: 'text_fallback',
           fallback_reason: message,
           result_count: textResults.length,
@@ -142,7 +161,7 @@ export function registerTools(api: any, pool: Pool, config: QuorumConfig): void 
             metadata: d.metadata,
             score: null,
           })),
-        };
+        });
       }
     },
   });
@@ -153,7 +172,7 @@ export function registerTools(api: any, pool: Pool, config: QuorumConfig): void 
     name: 'quorum_store',
     description:
       'Store a document, note, or decision into The Quorum memory database. Automatically generates and stores an embedding for semantic search.',
-    inputSchema: {
+    parameters: {
       type: 'object',
       properties: {
         doc_type: {
@@ -182,13 +201,17 @@ export function registerTools(api: any, pool: Pool, config: QuorumConfig): void 
       required: ['doc_type', 'title', 'content'],
       additionalProperties: false,
     },
-    handler: async (input: {
-      doc_type: string;
-      title: string;
-      content: string;
-      metadata?: Record<string, unknown>;
-      tags?: string[];
-    }) => {
+    execute: async (
+      _toolCallId: string,
+      input: {
+        doc_type: string;
+        title: string;
+        content: string;
+        metadata?: Record<string, unknown>;
+        tags?: string[];
+      },
+      _signal?: AbortSignal,
+    ) => {
       const doc = await storeDocument(pool, {
         doc_type: input.doc_type,
         title: input.title,
@@ -209,14 +232,14 @@ export function registerTools(api: any, pool: Pool, config: QuorumConfig): void 
         console.error(`[the-quorum] Embedding failed for doc ${doc.id}: ${message}`);
       }
 
-      return {
+      return jsonResult({
         id: doc.id,
         doc_type: doc.doc_type,
         title: doc.title,
         tags: doc.tags,
         created_at: doc.created_at,
         embedding_status: embeddingStatus,
-      };
+      });
     },
   });
 
@@ -226,7 +249,7 @@ export function registerTools(api: any, pool: Pool, config: QuorumConfig): void 
     name: 'quorum_store_event',
     description:
       'Log an event into The Quorum memory. Events represent decisions, insights, critiques, opportunities, or any notable occurrence worth remembering.',
-    inputSchema: {
+    parameters: {
       type: 'object',
       properties: {
         event_type: {
@@ -251,12 +274,16 @@ export function registerTools(api: any, pool: Pool, config: QuorumConfig): void 
       required: ['event_type', 'title'],
       additionalProperties: false,
     },
-    handler: async (input: {
-      event_type: string;
-      title: string;
-      description?: string;
-      metadata?: Record<string, unknown>;
-    }) => {
+    execute: async (
+      _toolCallId: string,
+      input: {
+        event_type: string;
+        title: string;
+        description?: string;
+        metadata?: Record<string, unknown>;
+      },
+      _signal?: AbortSignal,
+    ) => {
       const event = await storeEvent(pool, {
         event_type: input.event_type,
         title: input.title,
@@ -276,13 +303,13 @@ export function registerTools(api: any, pool: Pool, config: QuorumConfig): void 
         console.error(`[the-quorum] Embedding failed for event ${event.id}: ${message}`);
       }
 
-      return {
+      return jsonResult({
         id: event.id,
         event_type: event.event_type,
         title: event.title,
         created_at: event.created_at,
         embedding_status: embeddingStatus,
-      };
+      });
     },
   });
 
@@ -292,7 +319,7 @@ export function registerTools(api: any, pool: Pool, config: QuorumConfig): void 
     name: 'quorum_create_task',
     description:
       'Create a new task or update an existing task in The Quorum task tracker. Tasks represent actionable work items with status, priority, and ownership.',
-    inputSchema: {
+    parameters: {
       type: 'object',
       properties: {
         id: {
@@ -334,16 +361,20 @@ export function registerTools(api: any, pool: Pool, config: QuorumConfig): void 
       required: ['title'],
       additionalProperties: false,
     },
-    handler: async (input: {
-      id?: string;
-      title: string;
-      description?: string;
-      status?: string;
-      priority?: string;
-      owner?: string;
-      due_at?: string;
-      metadata?: Record<string, unknown>;
-    }) => {
+    execute: async (
+      _toolCallId: string,
+      input: {
+        id?: string;
+        title: string;
+        description?: string;
+        status?: string;
+        priority?: string;
+        owner?: string;
+        due_at?: string;
+        metadata?: Record<string, unknown>;
+      },
+      _signal?: AbortSignal,
+    ) => {
       if (input.id) {
         // Update existing task
         const updated = await updateTask(pool, input.id, {
@@ -357,13 +388,13 @@ export function registerTools(api: any, pool: Pool, config: QuorumConfig): void 
         });
 
         if (!updated) {
-          return { error: `Task ${input.id} not found` };
+          return jsonResult({ error: `Task ${input.id} not found` });
         }
 
-        return {
+        return jsonResult({
           action: 'updated',
           task: updated,
-        };
+        });
       }
 
       // Create new task
@@ -377,10 +408,10 @@ export function registerTools(api: any, pool: Pool, config: QuorumConfig): void 
         metadata: input.metadata,
       });
 
-      return {
+      return jsonResult({
         action: 'created',
         task,
-      };
+      });
     },
   });
 
@@ -390,7 +421,7 @@ export function registerTools(api: any, pool: Pool, config: QuorumConfig): void 
     name: 'quorum_list_tasks',
     description:
       'List tasks from The Quorum task tracker. Filter by status, priority, or owner. Results are ordered by priority (critical first) and due date.',
-    inputSchema: {
+    parameters: {
       type: 'object',
       properties: {
         status: {
@@ -414,12 +445,16 @@ export function registerTools(api: any, pool: Pool, config: QuorumConfig): void 
       },
       additionalProperties: false,
     },
-    handler: async (input: {
-      status?: string;
-      priority?: string;
-      owner?: string;
-      limit?: number;
-    }) => {
+    execute: async (
+      _toolCallId: string,
+      input: {
+        status?: string;
+        priority?: string;
+        owner?: string;
+        limit?: number;
+      },
+      _signal?: AbortSignal,
+    ) => {
       const tasks = await listTasks(pool, {
         status: input.status,
         priority: input.priority,
@@ -427,7 +462,7 @@ export function registerTools(api: any, pool: Pool, config: QuorumConfig): void 
         limit: input.limit,
       });
 
-      return {
+      return jsonResult({
         count: tasks.length,
         tasks: tasks.map((t) => ({
           id: t.id,
@@ -440,7 +475,7 @@ export function registerTools(api: any, pool: Pool, config: QuorumConfig): void 
           created_at: t.created_at,
           updated_at: t.updated_at,
         })),
-      };
+      });
     },
   });
 
@@ -450,7 +485,7 @@ export function registerTools(api: any, pool: Pool, config: QuorumConfig): void 
     name: 'quorum_embed',
     description:
       'Generate an embedding vector for text content using the configured Ollama model. Optionally stores the embedding linked to a reference (document or event).',
-    inputSchema: {
+    parameters: {
       type: 'object',
       properties: {
         text: {
@@ -470,7 +505,11 @@ export function registerTools(api: any, pool: Pool, config: QuorumConfig): void 
       required: ['text'],
       additionalProperties: false,
     },
-    handler: async (input: { text: string; ref_type?: string; ref_id?: string }) => {
+    execute: async (
+      _toolCallId: string,
+      input: { text: string; ref_type?: string; ref_id?: string },
+      _signal?: AbortSignal,
+    ) => {
       const embedding = await embedText(input.text, embedConfig);
 
       if (input.ref_type && input.ref_id) {
@@ -482,20 +521,20 @@ export function registerTools(api: any, pool: Pool, config: QuorumConfig): void 
           input.text
         );
 
-        return {
+        return jsonResult({
           dimension: embedding.length,
           ref_type: input.ref_type,
           ref_id: input.ref_id,
           stored: result.embedded,
           content_hash: result.content_hash,
-        };
+        });
       }
 
-      return {
+      return jsonResult({
         dimension: embedding.length,
         embedding: embedding.slice(0, 5).concat([null as any]),
         note: 'Full embedding generated. Only first 5 dimensions shown. Provide ref_type and ref_id to store.',
-      };
+      });
     },
   });
 
@@ -505,12 +544,16 @@ export function registerTools(api: any, pool: Pool, config: QuorumConfig): void 
     name: 'quorum_integration_status',
     description:
       'Show the status of all Quorum integrations: database connectivity, embedding service health, and configuration summary.',
-    inputSchema: {
+    parameters: {
       type: 'object',
       properties: {},
       additionalProperties: false,
     },
-    handler: async () => {
+    execute: async (
+      _toolCallId: string,
+      _input: Record<string, never>,
+      _signal?: AbortSignal,
+    ) => {
       const integrations: Record<
         string,
         { status: string; details: Record<string, unknown> }
@@ -585,10 +628,10 @@ export function registerTools(api: any, pool: Pool, config: QuorumConfig): void 
         (i) => i.status === 'connected' || i.status === 'installed'
       );
 
-      return {
+      return jsonResult({
         overall_status: allHealthy ? 'healthy' : 'degraded',
         integrations,
-      };
+      });
     },
   });
 
@@ -598,7 +641,7 @@ export function registerTools(api: any, pool: Pool, config: QuorumConfig): void 
     name: 'quorum_scan_inbox',
     description:
       'Scan the inbox directory for new files, ingest them into The Quorum memory system, and move them to the processed directory. Each file is stored as a document with its type inferred from the file extension, then queued for embedding.',
-    inputSchema: {
+    parameters: {
       type: 'object',
       properties: {
         inbox_path: {
@@ -614,7 +657,11 @@ export function registerTools(api: any, pool: Pool, config: QuorumConfig): void 
       },
       additionalProperties: false,
     },
-    handler: async (input: { inbox_path?: string; dry_run?: boolean }) => {
+    execute: async (
+      _toolCallId: string,
+      input: { inbox_path?: string; dry_run?: boolean },
+      _signal?: AbortSignal,
+    ) => {
       const inboxDir = input.inbox_path ?? config.inbox_dir;
       const processedDir = config.processed_dir;
       const dryRun = input.dry_run ?? false;
@@ -650,23 +697,23 @@ export function registerTools(api: any, pool: Pool, config: QuorumConfig): void 
           .map((e) => e.name);
       } catch (err: unknown) {
         const message = err instanceof Error ? err.message : String(err);
-        return {
+        return jsonResult({
           error: `Failed to read inbox directory: ${message}`,
           inbox_path: inboxDir,
-        };
+        });
       }
 
       if (entries.length === 0) {
-        return {
+        return jsonResult({
           inbox_path: inboxDir,
           files_found: 0,
           message: 'No files found in inbox directory.',
-        };
+        });
       }
 
       // Dry run: just list files
       if (dryRun) {
-        return {
+        return jsonResult({
           inbox_path: inboxDir,
           dry_run: true,
           files_found: entries.length,
@@ -674,7 +721,7 @@ export function registerTools(api: any, pool: Pool, config: QuorumConfig): void 
             name,
             doc_type: docTypeFromExtension(extname(name)),
           })),
-        };
+        });
       }
 
       // Process each file
@@ -742,7 +789,7 @@ export function registerTools(api: any, pool: Pool, config: QuorumConfig): void 
         }
       }
 
-      return {
+      return jsonResult({
         inbox_path: inboxDir,
         processed_dir: processedDir,
         files_found: entries.length,
@@ -750,7 +797,7 @@ export function registerTools(api: any, pool: Pool, config: QuorumConfig): void 
         files_errored: errors.length,
         results,
         ...(errors.length > 0 ? { errors } : {}),
-      };
+      });
     },
   });
 }
