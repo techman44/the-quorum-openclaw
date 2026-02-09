@@ -51,8 +51,15 @@ prompt_yn() {
     [[ "$answer" =~ ^[Yy] ]]
 }
 
+# ── Detect OS ─────────────────────────────────────────────────────────────
+OS_TYPE="$(uname -s)"
+IS_MAC=false
+if [ "$OS_TYPE" = "Darwin" ]; then
+    IS_MAC=true
+fi
+
 # ── Ensure DBUS session bus is available (headless / SSH environments) ────
-if [ -z "${DBUS_SESSION_BUS_ADDRESS:-}" ] && [ -S "${XDG_RUNTIME_DIR:-/run/user/$(id -u)}/bus" ]; then
+if [ "$IS_MAC" = false ] && [ -z "${DBUS_SESSION_BUS_ADDRESS:-}" ] && [ -S "${XDG_RUNTIME_DIR:-/run/user/$(id -u)}/bus" ]; then
     export DBUS_SESSION_BUS_ADDRESS="unix:path=${XDG_RUNTIME_DIR:-/run/user/$(id -u)}/bus"
 fi
 
@@ -351,12 +358,26 @@ success "Quorum skills installed into $SKILLS_DIR."
 # ── 12. Restart gateway to load plugin and skills ────────────────────────
 header "Restarting OpenClaw gateway"
 
-if systemctl --user is-active openclaw-gateway.service &>/dev/null; then
-    systemctl --user restart openclaw-gateway.service
-    sleep 2
-    success "Gateway restarted with plugin and skills loaded."
+if [ "$IS_MAC" = true ]; then
+    # macOS: use openclaw CLI or launchctl
+    if openclaw gateway restart &>/dev/null; then
+        sleep 2
+        success "Gateway restarted with plugin and skills loaded."
+    elif launchctl list 2>/dev/null | grep -qi openclaw; then
+        launchctl kickstart -k "gui/$(id -u)/openclaw-gateway" 2>/dev/null \
+            && sleep 2 && success "Gateway restarted via launchctl." \
+            || warn "Gateway service not found. Start it with: openclaw gateway install && openclaw daemon start"
+    else
+        warn "Gateway service not running. Start it with: openclaw gateway install && openclaw daemon start"
+    fi
 else
-    warn "Gateway service not running. Start it with: openclaw gateway install && openclaw daemon start"
+    if systemctl --user is-active openclaw-gateway.service &>/dev/null; then
+        systemctl --user restart openclaw-gateway.service
+        sleep 2
+        success "Gateway restarted with plugin and skills loaded."
+    else
+        warn "Gateway service not running. Start it with: openclaw gateway install && openclaw daemon start"
+    fi
 fi
 
 # ── 13. Workspace instructions for auto-retrieval ────────────────────────
@@ -523,32 +544,40 @@ echo "  to ingest into the memory system."
 echo ""
 echo "  Path: $INBOX_DIR"
 echo ""
-echo "  If this machine is a remote server, you can share the inbox"
-echo "  folder on your network so you can drop files in from other devices."
-echo ""
 
-if prompt_yn "Share the inbox folder via Samba (network file share)?" "n"; then
-    # Check if samba is installed
-    if ! command -v smbd &>/dev/null; then
-        info "Samba is not installed. Attempting to install..."
-        if command -v apt-get &>/dev/null; then
-            sudo apt-get update -qq && sudo apt-get install -y -qq samba >/dev/null 2>&1
-        elif command -v yum &>/dev/null; then
-            sudo yum install -y -q samba >/dev/null 2>&1
-        elif command -v dnf &>/dev/null; then
-            sudo dnf install -y -q samba >/dev/null 2>&1
-        else
-            error "Could not install Samba automatically. Install it manually and re-run."
+if [ "$IS_MAC" = true ]; then
+    echo "  On macOS, you can access this folder directly in Finder."
+    echo "  To share it on your network, use System Settings > General > Sharing."
+    echo ""
+    info "Inbox folder: $INBOX_DIR"
+    echo ""
+else
+    echo "  If this machine is a remote server, you can share the inbox"
+    echo "  folder on your network so you can drop files in from other devices."
+    echo ""
+
+    if prompt_yn "Share the inbox folder via Samba (network file share)?" "n"; then
+        # Check if samba is installed
+        if ! command -v smbd &>/dev/null; then
+            info "Samba is not installed. Attempting to install..."
+            if command -v apt-get &>/dev/null; then
+                sudo apt-get update -qq && sudo apt-get install -y -qq samba >/dev/null 2>&1
+            elif command -v yum &>/dev/null; then
+                sudo yum install -y -q samba >/dev/null 2>&1
+            elif command -v dnf &>/dev/null; then
+                sudo dnf install -y -q samba >/dev/null 2>&1
+            else
+                error "Could not install Samba automatically. Install it manually and re-run."
+            fi
         fi
-    fi
 
-    if command -v smbd &>/dev/null; then
-        # Get the user who should own the share
-        SHARE_USER="${SUDO_USER:-$(whoami)}"
+        if command -v smbd &>/dev/null; then
+            # Get the user who should own the share
+            SHARE_USER="${SUDO_USER:-$(whoami)}"
 
-        # Add Samba config block if not already present
-        if ! grep -q "\[quorum-inbox\]" /etc/samba/smb.conf 2>/dev/null; then
-            sudo tee -a /etc/samba/smb.conf >/dev/null <<SMBEOF
+            # Add Samba config block if not already present
+            if ! grep -q "\[quorum-inbox\]" /etc/samba/smb.conf 2>/dev/null; then
+                sudo tee -a /etc/samba/smb.conf >/dev/null <<SMBEOF
 
 [quorum-inbox]
    comment = The Quorum - Inbox
@@ -560,48 +589,49 @@ if prompt_yn "Share the inbox folder via Samba (network file share)?" "n"; then
    create mask = 0644
    directory mask = 0755
 SMBEOF
-            info "Added [quorum-inbox] share to /etc/samba/smb.conf"
+                info "Added [quorum-inbox] share to /etc/samba/smb.conf"
+            else
+                info "[quorum-inbox] share already exists in smb.conf"
+            fi
+
+            # Set Samba password for the user
+            echo ""
+            info "Set a Samba password for user '$SHARE_USER' to access the share:"
+            sudo smbpasswd -a "$SHARE_USER"
+
+            # Restart Samba
+            if systemctl is-active smbd &>/dev/null || systemctl list-unit-files smbd.service &>/dev/null; then
+                sudo systemctl restart smbd
+                sudo systemctl enable smbd 2>/dev/null || true
+            fi
+
+            # Get machine IP for connection instructions
+            MACHINE_IP=$(hostname -I 2>/dev/null | awk '{print $1}' || echo "<server-ip>")
+
+            echo ""
+            success "Inbox shared via Samba."
+            echo ""
+            echo "  Connect from your devices:"
+            echo ""
+            echo "    Mac Finder:     smb://$MACHINE_IP/quorum-inbox"
+            echo "    Windows:        \\\\$MACHINE_IP\\quorum-inbox"
+            echo "    Linux:          smb://$MACHINE_IP/quorum-inbox"
+            echo ""
+            echo "  Login with user '$SHARE_USER' and the password you just set."
+            echo ""
+            echo "  Drop any file into this share and the Data Collector will"
+            echo "  ingest it on its next run (every 30 minutes)."
+            echo ""
         else
-            info "[quorum-inbox] share already exists in smb.conf"
+            warn "Samba installation failed. You can set it up manually later."
+            echo "  The inbox folder is still at: $INBOX_DIR"
+            echo ""
         fi
-
-        # Set Samba password for the user
-        echo ""
-        info "Set a Samba password for user '$SHARE_USER' to access the share:"
-        sudo smbpasswd -a "$SHARE_USER"
-
-        # Restart Samba
-        if systemctl is-active smbd &>/dev/null || systemctl list-unit-files smbd.service &>/dev/null; then
-            sudo systemctl restart smbd
-            sudo systemctl enable smbd 2>/dev/null || true
-        fi
-
-        # Get machine IP for connection instructions
-        MACHINE_IP=$(hostname -I 2>/dev/null | awk '{print $1}' || echo "<server-ip>")
-
-        echo ""
-        success "Inbox shared via Samba."
-        echo ""
-        echo "  Connect from your devices:"
-        echo ""
-        echo "    Mac Finder:     smb://$MACHINE_IP/quorum-inbox"
-        echo "    Windows:        \\\\$MACHINE_IP\\quorum-inbox"
-        echo "    Linux:          smb://$MACHINE_IP/quorum-inbox"
-        echo ""
-        echo "  Login with user '$SHARE_USER' and the password you just set."
-        echo ""
-        echo "  Drop any file into this share and the Data Collector will"
-        echo "  ingest it on its next run (every 30 minutes)."
-        echo ""
     else
-        warn "Samba installation failed. You can set it up manually later."
-        echo "  The inbox folder is still at: $INBOX_DIR"
+        info "Skipping inbox share. You can access it directly at:"
+        echo "  $INBOX_DIR"
         echo ""
     fi
-else
-    info "Skipping inbox share. You can access it directly at:"
-    echo "  $INBOX_DIR"
-    echo ""
 fi
 
 # ── 17. Final health check ──────────────────────────────────────────────

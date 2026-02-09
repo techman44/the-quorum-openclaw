@@ -8,6 +8,8 @@ An OpenClaw plugin that gives your AI agent long-term memory, self-awareness, an
 - **Docker** -- for running PostgreSQL + Ollama containers (Will be checked and installed during the install script)
 - **Node.js** and **npm** -- for building the TypeScript plugin
 
+Works on **macOS** and **Linux**. On macOS, Docker Desktop provides the container runtime and you get native Finder access to the inbox folder. On Linux, the install script can optionally set up Samba network sharing for the inbox.
+
 PostgreSQL, pgvector, Ollama, and the embedding model are all handled automatically via Docker -- you don't need to install them separately.
 
 ## GPU Acceleration (Recommended)
