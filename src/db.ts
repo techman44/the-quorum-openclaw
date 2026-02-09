@@ -237,19 +237,26 @@ export async function semanticSearch(
 
   const whereClause = conditions.length > 0 ? `WHERE ${conditions.join(' AND ')}` : '';
 
+  // Match both base document embeddings and chunk embeddings.
+  // Use a subquery with DISTINCT ON to pick the best-matching chunk per document,
+  // then sort by score and apply the limit.
   const result = await pool.query<SearchResult>(
-    `SELECT
-       d.id,
-       d.doc_type,
-       d.title,
-       d.content,
-       d.metadata,
-       d.tags,
-       1 - (e.embedding <=> $1::vector) AS score
-     FROM quorum_embeddings e
-     JOIN quorum_documents d ON d.id = e.ref_id AND e.ref_type = 'document'
-     ${whereClause}
-     ORDER BY e.embedding <=> $1::vector ASC
+    `SELECT * FROM (
+       SELECT DISTINCT ON (d.id)
+         d.id,
+         d.doc_type,
+         d.title,
+         d.content,
+         d.metadata,
+         d.tags,
+         1 - (e.embedding <=> $1::vector) AS score
+       FROM quorum_embeddings e
+       JOIN quorum_documents d ON d.id = e.ref_id
+         AND (e.ref_type = 'document' OR e.ref_type LIKE 'document_chunk_%')
+       ${whereClause}
+       ORDER BY d.id, e.embedding <=> $1::vector ASC
+     ) AS ranked
+     ORDER BY ranked.score DESC
      LIMIT $${paramIdx}`,
     params
   );
@@ -277,19 +284,24 @@ export async function semanticSearchEvents(
 
   const whereClause = conditions.length > 0 ? `WHERE ${conditions.join(' AND ')}` : '';
 
+  // Match both base event embeddings and chunk embeddings.
   const result = await pool.query<QuorumEvent & { score: number }>(
-    `SELECT
-       ev.id,
-       ev.event_type,
-       ev.title,
-       ev.description,
-       ev.metadata,
-       ev.created_at,
-       1 - (e.embedding <=> $1::vector) AS score
-     FROM quorum_embeddings e
-     JOIN quorum_events ev ON ev.id = e.ref_id AND e.ref_type = 'event'
-     ${whereClause}
-     ORDER BY e.embedding <=> $1::vector ASC
+    `SELECT * FROM (
+       SELECT DISTINCT ON (ev.id)
+         ev.id,
+         ev.event_type,
+         ev.title,
+         ev.description,
+         ev.metadata,
+         ev.created_at,
+         1 - (e.embedding <=> $1::vector) AS score
+       FROM quorum_embeddings e
+       JOIN quorum_events ev ON ev.id = e.ref_id
+         AND (e.ref_type = 'event' OR e.ref_type LIKE 'event_chunk_%')
+       ${whereClause}
+       ORDER BY ev.id, e.embedding <=> $1::vector ASC
+     ) AS ranked
+     ORDER BY ranked.score DESC
      LIMIT $${paramIdx}`,
     params
   );
@@ -551,7 +563,9 @@ export async function hasEmbedding(
 export async function getUnembeddedDocuments(pool: Pool, limit: number = 100): Promise<QuorumDocument[]> {
   const result = await pool.query<QuorumDocument>(
     `SELECT d.* FROM quorum_documents d
-     LEFT JOIN quorum_embeddings e ON e.ref_type = 'document' AND e.ref_id = d.id
+     LEFT JOIN quorum_embeddings e
+       ON e.ref_id = d.id
+       AND (e.ref_type = 'document' OR e.ref_type LIKE 'document_chunk_%')
      WHERE e.id IS NULL
      ORDER BY d.created_at ASC
      LIMIT $1`,
@@ -563,13 +577,57 @@ export async function getUnembeddedDocuments(pool: Pool, limit: number = 100): P
 export async function getUnembeddedEvents(pool: Pool, limit: number = 100): Promise<QuorumEvent[]> {
   const result = await pool.query<QuorumEvent>(
     `SELECT ev.* FROM quorum_events ev
-     LEFT JOIN quorum_embeddings e ON e.ref_type = 'event' AND e.ref_id = ev.id
+     LEFT JOIN quorum_embeddings e
+       ON e.ref_id = ev.id
+       AND (e.ref_type = 'event' OR e.ref_type LIKE 'event_chunk_%')
      WHERE e.id IS NULL
      ORDER BY ev.created_at ASC
      LIMIT $1`,
     [limit]
   );
   return result.rows;
+}
+
+// ─── Chunk Embedding Helpers ──────────────────────────────────────────────
+
+/**
+ * Delete all chunk embeddings for a given ref_id.
+ * Chunk embeddings have ref_type like 'document_chunk_%' or 'event_chunk_%'.
+ * Also deletes the base embedding (ref_type = 'document' or 'event') for re-embedding.
+ */
+export async function deleteEmbeddingsForRef(
+  pool: Pool,
+  baseRefType: string,
+  refId: string
+): Promise<number> {
+  const result = await pool.query(
+    `DELETE FROM quorum_embeddings
+     WHERE ref_id = $1
+       AND (ref_type = $2 OR ref_type LIKE $3)`,
+    [refId, baseRefType, `${baseRefType}_chunk_%`]
+  );
+  return result.rowCount ?? 0;
+}
+
+/**
+ * Check if any embedding (base or chunk) exists for a given ref_id with a specific content hash.
+ * Used to determine if re-chunking is needed when content changes.
+ */
+export async function hasAnyEmbeddingForRef(
+  pool: Pool,
+  baseRefType: string,
+  refId: string,
+  contentHash: string
+): Promise<boolean> {
+  const result = await pool.query(
+    `SELECT 1 FROM quorum_embeddings
+     WHERE ref_id = $1
+       AND (ref_type = $2 OR ref_type LIKE $3)
+       AND content_hash = $4
+     LIMIT 1`,
+    [refId, baseRefType, `${baseRefType}_chunk_%`, contentHash]
+  );
+  return result.rowCount !== null && result.rowCount > 0;
 }
 
 // ─── Stats ───────────────────────────────────────────────────────────────────
@@ -589,12 +647,16 @@ export async function getStats(pool: Pool): Promise<{
     pool.query('SELECT count(*)::int AS n FROM quorum_embeddings'),
     pool.query(
       `SELECT count(*)::int AS n FROM quorum_documents d
-       LEFT JOIN quorum_embeddings e ON e.ref_type = 'document' AND e.ref_id = d.id
+       LEFT JOIN quorum_embeddings e
+         ON e.ref_id = d.id
+         AND (e.ref_type = 'document' OR e.ref_type LIKE 'document_chunk_%')
        WHERE e.id IS NULL`
     ),
     pool.query(
       `SELECT count(*)::int AS n FROM quorum_events ev
-       LEFT JOIN quorum_embeddings e ON e.ref_type = 'event' AND e.ref_id = ev.id
+       LEFT JOIN quorum_embeddings e
+         ON e.ref_id = ev.id
+         AND (e.ref_type = 'event' OR e.ref_type LIKE 'event_chunk_%')
        WHERE e.id IS NULL`
     ),
   ]);

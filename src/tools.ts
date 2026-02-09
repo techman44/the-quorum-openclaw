@@ -38,7 +38,7 @@ import {
   searchDocumentsByText,
   getStats,
 } from './db.js';
-import { embedText, embedAndStore, checkOllamaHealth, type EmbeddingConfig } from './embeddings.js';
+import { embedText, embedAndStoreChunked, checkOllamaHealth, type EmbeddingConfig } from './embeddings.js';
 
 export interface QuorumConfig {
   db_host: string;
@@ -127,7 +127,6 @@ export function registerTools(api: any, pool: Pool, config: QuorumConfig): void 
 
         if (refType === 'all' || refType === 'document') {
           const docResults = await semanticSearch(pool, queryEmbedding, {
-            ref_type: refType === 'document' ? 'document' : undefined,
             limit,
           });
           for (const r of docResults) {
@@ -246,12 +245,14 @@ export function registerTools(api: any, pool: Pool, config: QuorumConfig): void 
         tags: input.tags,
       });
 
-      // Embed in the background (best effort)
+      // Embed using chunking for long documents (best effort)
       let embeddingStatus = 'pending';
+      let chunksStored = 0;
       try {
         const textToEmbed = `${doc.title}\n\n${doc.content}`;
-        const result = await embedAndStore(pool, embedConfig, 'document', doc.id, textToEmbed);
+        const result = await embedAndStoreChunked(pool, embedConfig, 'document', doc.id, textToEmbed);
         embeddingStatus = result.embedded ? 'stored' : 'already_current';
+        chunksStored = result.chunks_stored;
       } catch (err: unknown) {
         const message = err instanceof Error ? err.message : String(err);
         embeddingStatus = `failed: ${message}`;
@@ -265,6 +266,7 @@ export function registerTools(api: any, pool: Pool, config: QuorumConfig): void 
         tags: doc.tags,
         created_at: doc.created_at,
         embedding_status: embeddingStatus,
+        chunks_embedded: chunksStored,
       });
     },
   });
@@ -317,12 +319,14 @@ export function registerTools(api: any, pool: Pool, config: QuorumConfig): void 
         metadata: input.metadata,
       });
 
-      // Embed the event (best effort)
+      // Embed the event using chunking for long descriptions (best effort)
       let embeddingStatus = 'pending';
+      let chunksStored = 0;
       try {
         const textToEmbed = `[${event.event_type}] ${event.title}\n\n${event.description}`;
-        const result = await embedAndStore(pool, embedConfig, 'event', event.id, textToEmbed);
+        const result = await embedAndStoreChunked(pool, embedConfig, 'event', event.id, textToEmbed);
         embeddingStatus = result.embedded ? 'stored' : 'already_current';
+        chunksStored = result.chunks_stored;
       } catch (err: unknown) {
         const message = err instanceof Error ? err.message : String(err);
         embeddingStatus = `failed: ${message}`;
@@ -335,6 +339,7 @@ export function registerTools(api: any, pool: Pool, config: QuorumConfig): void 
         title: event.title,
         created_at: event.created_at,
         embedding_status: embeddingStatus,
+        chunks_embedded: chunksStored,
       });
     },
   });
@@ -539,7 +544,7 @@ export function registerTools(api: any, pool: Pool, config: QuorumConfig): void 
       const embedding = await embedText(input.text, embedConfig);
 
       if (input.ref_type && input.ref_id) {
-        const result = await embedAndStore(
+        const result = await embedAndStoreChunked(
           pool,
           embedConfig,
           input.ref_type,
@@ -553,6 +558,7 @@ export function registerTools(api: any, pool: Pool, config: QuorumConfig): void 
           ref_id: input.ref_id,
           stored: result.embedded,
           content_hash: result.content_hash,
+          chunks_embedded: result.chunks_stored,
         });
       }
 
@@ -757,6 +763,7 @@ export function registerTools(api: any, pool: Pool, config: QuorumConfig): void 
         doc_type: string;
         title: string;
         embedding_status: string;
+        chunks_embedded: number;
         moved_to: string;
       }> = [];
       const errors: Array<{ file: string; error: string }> = [];
@@ -805,14 +812,14 @@ export function registerTools(api: any, pool: Pool, config: QuorumConfig): void 
             tags: ['inbox', docType],
           });
 
-          // Embed (best effort)
+          // Embed using chunking so the entire document is searchable (best effort)
           let embeddingStatus = 'pending';
+          let chunksStored = 0;
           try {
-            // Truncate to ~2000 chars to fit embedding model context window
-            const truncContent = doc.content.length > 2000 ? doc.content.slice(0, 2000) : doc.content;
-            const textToEmbed = `${doc.title}\n\n${truncContent}`;
-            const result = await embedAndStore(pool, embedConfig, 'document', doc.id, textToEmbed);
+            const textToEmbed = `${doc.title}\n\n${doc.content}`;
+            const result = await embedAndStoreChunked(pool, embedConfig, 'document', doc.id, textToEmbed);
             embeddingStatus = result.embedded ? 'stored' : 'already_current';
+            chunksStored = result.chunks_stored;
           } catch (embErr: unknown) {
             const embMessage = embErr instanceof Error ? embErr.message : String(embErr);
             embeddingStatus = `failed: ${embMessage}`;
@@ -831,6 +838,7 @@ export function registerTools(api: any, pool: Pool, config: QuorumConfig): void 
             doc_type: docType,
             title: doc.title,
             embedding_status: embeddingStatus,
+            chunks_embedded: chunksStored,
             moved_to: processedName,
           });
         } catch (err: unknown) {
