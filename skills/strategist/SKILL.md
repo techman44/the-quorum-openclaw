@@ -118,4 +118,4 @@ If the memory system has very little data, your reflection should acknowledge th
 - Reference past reflections when possible to show how things are trending.
 - Keep reflections structured and scannable. The user should be able to read the key points in under 60 seconds.
 - When suggesting reprioritization, explain the reasoning. "I moved X to priority 1 because..." is more useful than just changing the number.
-- Do NOT repeat the same strategic observations across reflections unless the situation has changed. Reference previous reflections and build on them.
+- Do NOT repeat the same strategic observations across reflections unless the situation has changed or deadlines are approaching. Reference previous reflections and build on them.

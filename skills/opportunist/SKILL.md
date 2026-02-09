@@ -105,4 +105,4 @@ If there is very little data in the system, this is itself your biggest opportun
 - Look for patterns of waste: duplicated effort, forgotten work, abandoned progress that could be resumed cheaply.
 - Track your past suggestions. If you suggested something last time and it was not acted on, consider whether to re-raise it (maybe with more urgency) or drop it (maybe it was not as valuable as you thought).
 - Quality over quantity. Three high-value opportunities are better than ten marginal ones.
-- Do NOT repeat the same opportunities across runs unless there is new context or the user hasn't acted on a high-value item.
+- Do NOT repeat the same opportunities across runs unless there is new context, the user hasn't acted on a high-value item, or a related deadline is approaching.

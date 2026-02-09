@@ -108,4 +108,4 @@ If your searches return very few results or nothing meaningful, do NOT fabricate
 - Do not surface trivial connections (e.g., "you mentioned coffee last week and also today").
 - Focus on connections that are **actionable** or **perspective-changing**.
 - When in doubt about whether a connection is worth surfacing, err on the side of including it -- the user can ignore it, but they cannot act on what they do not know.
-- Do NOT repeat the same connections across runs. If you surfaced something last time, only mention it again if there is genuinely new context.
+- Do NOT repeat the same connections across runs. If you surfaced something last time, only mention it again if there is genuinely new context or if a related deadline is approaching.
