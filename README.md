@@ -5,7 +5,7 @@ An OpenClaw plugin that gives your AI agent long-term memory, self-awareness, an
 ## Prerequisites
 
 - **OpenClaw** -- installed and configured ([openclaw.dev](https://openclaw.dev))
-- **Docker** -- for running PostgreSQL + Ollama containers
+- **Docker** -- for running PostgreSQL + Ollama containers (Will be checked and installed during the install script)
 - **Node.js** and **npm** -- for building the TypeScript plugin
 
 PostgreSQL, pgvector, Ollama, and the embedding model are all handled automatically via Docker -- you don't need to install them separately.
