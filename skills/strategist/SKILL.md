@@ -110,6 +110,14 @@ If the memory system has very little data, your reflection should acknowledge th
 - Suggest what would help: "A few days of conversation history and some project documents would let me give you a real strategic picture"
 - Keep your output proportional to the available data -- a sparse system gets a short reflection, not a long one full of padding
 
+## Beyond the Database
+
+After searching the Quorum database, review your available tools -- you may have access to email, messaging, calendar, contacts, browser, and other integrations. Use any relevant tools to build a fuller picture of where time and attention are going.
+
+**What to look for:** Look at the breadth of activity across all available systems -- email volume and patterns, message frequency, calendar density and gaps. These signals help you understand what is actually consuming the user's time versus what they say their priorities are. Calendar data is especially valuable for spotting overcommitment or misaligned time allocation.
+
+**Store what you find:** When external tools reveal strategic patterns (e.g., "80% of calendar is meetings, leaving no deep work time"), store the insight using `quorum_store_event` so it feeds into future reflections. Include `"source_channel": "external"` in the metadata.
+
 ## Guidelines
 
 - Think in trajectories, not snapshots. A single day's data means little; trends over multiple days tell a story.

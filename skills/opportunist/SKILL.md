@@ -98,6 +98,14 @@ If there is very little data in the system, this is itself your biggest opportun
 - Frame data input as the quick win it actually is
 - Keep it to 2-3 sentences when there's nothing substantive to report
 
+## Beyond the Database
+
+After searching the Quorum database, review your available tools -- you may have access to email, messaging, calendar, contacts, browser, and other integrations. Use any relevant tools to find quick wins the database alone would miss.
+
+**What to look for:** Scan for unanswered emails that could be replied to in minutes, missed connections where someone reached out and never got a response, meeting follow-ups that were never sent, and introductions that were offered but never accepted. These are exactly the kind of low-effort, high-value actions that hide in an inbox. Also look for contacts or conversations that align with current projects but were never acted on.
+
+**Store what you find:** When you discover opportunities through external tools, store them with `quorum_store_event` and create tasks with `quorum_create_task` so nothing falls through the cracks again. Include `"source_channel": "external"` in the metadata.
+
 ## Guidelines
 
 - Focus on actionable opportunities. "You could improve things" is useless. "The data validation logic in project X is identical to what project Y needs -- copy it and save 4 hours" is actionable.
