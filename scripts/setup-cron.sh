@@ -199,7 +199,7 @@ openclaw cron add \
 
 # ── Data Collector: every 30 minutes ─────────────────────────────
 
-echo "  [6/6] The Data Collector (every 30 minutes)..."
+echo "  [6/7] The Data Collector (every 30 minutes)..."
 openclaw cron add \
   --name "quorum-data-collector" \
   --cron "*/30 * * * *" \
@@ -207,9 +207,19 @@ openclaw cron add \
   --message "You are The Data Collector from The Quorum. Scan the inbox for new files (quorum_scan_inbox). Verify ingested docs are searchable (quorum_search). Check system health (quorum_integration_status). DELIVERY RULE: Only report what was processed and any errors. Example: 'Inbox: 3 files processed (notes.md, proposal.pdf, email.eml). All indexed.' If the inbox was empty, say so in one sentence. Do NOT describe your scanning process or methodology." \
   $DELIVERY_FLAGS
 
+# ── Closer: every 10 minutes ───────────────────────────────────────
+
+echo "  [7/7] The Closer (every 10 minutes)..."
+openclaw cron add \
+  --name "quorum-closer" \
+  --cron "*/10 * * * *" \
+  --session isolated \
+  --message "You are The Closer from The Quorum. You MUST search the database first -- do not skip this. Find claims of completion (quorum_search with queries for 'done', 'sent', 'finished', 'completed'). Check tasks marked completed without verification (quorum_list_tasks). Check events flagged for you (metadata.considered_agents contains 'closer'). After searching the database, verify claims using external tools: check sent email folders, visit websites to confirm deployments, check calendar for meeting evidence, look in messaging apps for delivery confirmations. For verified completions, update task status (quorum_complete_task) with verification metadata. For failed verifications, store events (quorum_store_event, event_type: 'verification-failed', metadata.source: 'closer'). DELIVERY RULE: Only tell the user what you checked, what you found, and what action you took. Be specific: what was verified, how, and when. Do NOT describe your process or tools. Keep it short and scannable." \
+  $DELIVERY_FLAGS
+
 echo ""
 echo "============================================"
-echo "  All 6 Quorum cron jobs created!"
+echo "  All 7 Quorum cron jobs created!"
 echo "============================================"
 echo ""
 echo "Schedules:"
@@ -219,6 +229,7 @@ echo "  Strategist .......... daily at 6:00 AM"
 echo "  Devil's Advocate .... every 4 hours"
 echo "  Opportunist ......... every 6 hours"
 echo "  Data Collector ...... every 30 minutes"
+echo "  Closer .............. every 10 minutes"
 echo ""
 echo "Delivery: ${CHANNEL:-OpenClaw session (default)}"
 echo ""

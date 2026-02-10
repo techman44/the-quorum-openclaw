@@ -1,6 +1,6 @@
 # The Quorum for OpenClaw
 
-An OpenClaw plugin that gives your AI agent long-term memory, self-awareness, and accountability. Five autonomous "conscience agents" run on scheduled intervals, searching your memory system for connections, tracking commitments, challenging decisions, and surfacing opportunities -- then delivering their findings directly to you via Telegram or WhatsApp.
+An OpenClaw plugin that gives your AI agent long-term memory, self-awareness, and accountability. Seven autonomous "conscience agents" run on scheduled intervals, searching your memory system for connections, tracking commitments, challenging decisions, surfacing opportunities, and verifying completion -- then delivering their findings directly to you via Telegram or WhatsApp.
 
 ## Prerequisites
 
@@ -98,7 +98,7 @@ The OpenClaw plugin provides eight tools that any agent session can use:
 - `quorum_scan_inbox` -- Scan the inbox directory for new files, ingest and index them
 
 **2. Conscience Agents (Skills + Cron)**
-Five agents run on scheduled intervals via OpenClaw cron jobs. Each has a distinct personality and purpose, defined by skill files in the `skills/` directory:
+Seven agents run on scheduled intervals via OpenClaw cron jobs. Each has a distinct personality and purpose, defined by skill files in the `skills/` directory:
 
 | Agent | Schedule | Purpose |
 |---|---|---|
@@ -108,6 +108,7 @@ Five agents run on scheduled intervals via OpenClaw cron jobs. Each has a distin
 | **The Devil's Advocate** | Every 4 hours | Challenges assumptions, critiques decisions, highlights risks |
 | **The Opportunist** | Every 6 hours | Scans for quick wins, reusable work, and hidden value |
 | **The Data Collector** | Every 30 minutes | Scans the inbox directory for new files, ingests and indexes them automatically |
+| **The Closer** | Every 10 minutes | Verifies completion, closes tasks, updates status from evidence |
 
 **Onboarding**
 During installation, a quick CLI questionnaire captures your basics -- name, role, projects, priorities, and how you want the agents to behave. This gets written to `data/inbox/` where the Data Collector ingests it into the memory system automatically. For a deeper interactive onboarding, you can run the `quorum-onboarding` skill through OpenClaw chat at any time.
@@ -232,6 +233,7 @@ the-quorum-openclaw/
     devils-advocate/     The Devil's Advocate skill
     opportunist/         The Opportunist skill
     data-collector/      The Data Collector skill
+    closer/              The Closer skill
   scripts/
     install.sh           Full installation script
     setup-cron.sh        Cron job setup/removal script
