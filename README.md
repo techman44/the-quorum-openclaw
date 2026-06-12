@@ -1,5 +1,9 @@
 # The Quorum for OpenClaw
 
+<p align="center">
+  <img src="assets/quorum-overview.png" alt="The Quorum — From Forgetful to Insightful: Building an AI Memory System. PostgreSQL + pgvector store with thousands of documents and embeddings, AI monitoring conversations, and five conscience agents (The Connector, The Executor, The Strategist, Devil's Advocate, The Opportunist) that remember, learn, and remind." width="600">
+</p>
+
 An OpenClaw plugin that gives your AI agent long-term memory, self-awareness, and accountability. Seven autonomous "conscience agents" run on scheduled intervals, searching your memory system for connections, tracking commitments, challenging decisions, surfacing opportunities, and verifying completion -- then delivering their findings directly to you via Telegram or WhatsApp.
 
 ## Prerequisites
